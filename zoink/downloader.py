@@ -288,7 +288,8 @@ class DownloadManager:
             return
 
         job.state = DownloadState.DOWNLOADING
-        job.status_text = "Downloading audio..."
+        job.progress = 5.0
+        job.status_text = "Connecting to audio stream..."
         if on_progress:
             on_progress(job)
 
@@ -325,13 +326,18 @@ class DownloadManager:
                 job.total_bytes = total
                 job.speed = float(data.get("speed") or 0.0)
                 job.eta = int(data.get("eta") or 0)
-                job.progress = (downloaded / total * 100) if total else 0.0
-                job.status_text = f"Downloading: {job.progress:.0f}%"
+                if total:
+                    raw_pct = downloaded / total
+                    job.progress = 5.0 + (raw_pct * 70.0)
+                    job.status_text = f"Downloading: {raw_pct * 100:.0f}%"
+                else:
+                    job.progress = min(75.0, 5.0 + (downloaded / (4 * 1024 * 1024)) * 60.0)
+                    job.status_text = "Downloading audio..."
                 if on_progress:
                     on_progress(job)
             elif status == "finished":
-                job.progress = 100.0
-                job.status_text = "Converting audio..."
+                job.progress = 75.0
+                job.status_text = f"Converting audio to {fmt.upper()}..."
                 if on_progress:
                     on_progress(job)
 
@@ -346,7 +352,7 @@ class DownloadManager:
         # Pass multithreaded FFmpeg arguments for fast conversion
         pp_args = ["-threads", "0"]
         if fmt == "mp3":
-            # LAME compression level 7 gives fast encoding while maintaining high audio fidelity
+            # Fast encoding with excellent fidelity
             pp_args.extend(["-compression_level", "7"])
         elif fmt in ("m4a", "aac"):
             pp_args.extend(["-threads", "0"])
@@ -357,7 +363,11 @@ class DownloadManager:
             format=audio_format,
             outtmpl=str(tmp_file.with_suffix(".%(ext)s")),
             postprocessors=postprocessors,
-            postprocessor_args={"default": pp_args},
+            postprocessor_args={
+                "default": pp_args,
+                "FFmpegExtractAudio": pp_args,
+                "ExtractAudio": pp_args,
+            },
             concurrent_fragment_downloads=4,
             progress_hooks=[_hook],
             ignoreerrors=False,
@@ -421,6 +431,7 @@ class DownloadManager:
 
         # Verification of media integrity before finalization
         job.state = DownloadState.VERIFYING
+        job.progress = 85.0
         job.status_text = "Verifying audio integrity..."
         if on_progress:
             on_progress(job)
@@ -434,16 +445,26 @@ class DownloadManager:
                 on_progress(job)
             return
 
+        if self.is_cancelled(job.track.id):
+            job.state = DownloadState.CANCELLED
+            job.error = "Cancelled"
+            job.status_text = "Cancelled"
+            _cleanup(tmp_dir)
+            if on_progress:
+                on_progress(job)
+            return
+
         # Embed metadata, artwork, lyrics
         job.state = DownloadState.METADATA
+        job.progress = 90.0
         job.status_text = "Embedding metadata & artwork..."
         if on_progress:
             on_progress(job)
 
         artwork_data = None
-        lyrics_text = None
+        lyrics_text = job.track.lyrics or None
         embed_art = cfg.get_value("embed_artwork", True)
-        embed_lyr = cfg.get_value("embed_lyrics", True)
+        embed_lyr = cfg.get_value("embed_lyrics", True) and not lyrics_text
 
         if embed_art or embed_lyr:
             with ThreadPoolExecutor(max_workers=2) as pool:
@@ -473,20 +494,30 @@ class DownloadManager:
                 )
                 if art_future:
                     try:
-                        artwork_data = art_future.result(timeout=10)
+                        artwork_data = art_future.result(timeout=5)
                     except Exception:
                         artwork_data = None
                 if lyr_future:
                     try:
-                        lyrics_text = lyr_future.result(timeout=10)
+                        lyrics_text = lyr_future.result(timeout=5)
                     except Exception:
                         lyrics_text = None
 
-        if cfg.get_value("embed_metadata", True):
+        if cfg.get_value("embed_metadata", True) and not self.is_cancelled(job.track.id):
             embed_metadata(downloaded_file, job.track, artwork_data, lyrics_text)
+
+        if self.is_cancelled(job.track.id):
+            job.state = DownloadState.CANCELLED
+            job.error = "Cancelled"
+            job.status_text = "Cancelled"
+            _cleanup(tmp_dir)
+            if on_progress:
+                on_progress(job)
+            return
 
         # Atomic finalization
         job.state = DownloadState.FINALIZING
+        job.progress = 98.0
         job.status_text = "Finalizing file..."
         if on_progress:
             on_progress(job)

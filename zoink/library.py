@@ -89,20 +89,31 @@ class Library:
             finally:
                 conn.close()
 
-    def _generate_track_id(self, filepath: Path, raw_id: Optional[str] = None) -> str:
+    def _generate_track_id(
+        self, filepath: Path, raw_id: Optional[str] = None, conn: Optional[sqlite3.Connection] = None
+    ) -> str:
         """Generate a stable, unique ID for a track."""
         if raw_id and raw_id.strip():
             # Check if this raw_id already exists for a DIFFERENT filepath
-            with self._conn() as conn:
-                existing = conn.execute("SELECT filepath FROM tracks WHERE id = ?", (raw_id,)).fetchone()
+            need_close = False
+            c = conn
+            if c is None:
+                c = self._conn()
+                need_close = True
+            try:
+                existing = c.execute("SELECT filepath FROM tracks WHERE id = ?", (raw_id,)).fetchone()
                 if not existing or existing[0] == str(filepath):
                     return raw_id
+            finally:
+                if need_close and c is not None:
+                    c.close()
         # Fallback to hash of filepath
         return hashlib.sha1(str(filepath).encode("utf-8")).hexdigest()[:16]
 
-    def add_track(self, filepath: Path | str, track: Optional[TrackResult] = None) -> bool:
-        """Add or update a track in the library. Reads metadata from file if track is None."""
-        filepath = Path(filepath)
+    def _save_track(
+        self, conn: sqlite3.Connection, filepath: Path, track: Optional[TrackResult] = None
+    ) -> bool:
+        """Helper to insert/update a track using an existing connection within a transaction."""
         if not filepath.exists() or not filepath.is_file():
             return False
         if track is None:
@@ -118,63 +129,70 @@ class Library:
             file_size = 0
             mtime = 0
 
-        track_id = self._generate_track_id(filepath, track.id)
+        track_id = self._generate_track_id(filepath, track.id, conn=conn)
         has_artwork = 1 if (track.artwork_url or getattr(track, "has_artwork", False)) else 0
         has_lyrics = 1 if (track.has_lyrics or track.lyrics) else 0
 
+        conn.execute(
+            """INSERT INTO tracks
+            (id, title, artist, album, album_artist, composer, genre, duration, year,
+             track_number, total_tracks, disc_number, total_discs, source, filepath,
+             has_artwork, has_lyrics, file_size, mtime)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(filepath) DO UPDATE SET
+                id = excluded.id,
+                title = excluded.title,
+                artist = excluded.artist,
+                album = excluded.album,
+                album_artist = excluded.album_artist,
+                composer = excluded.composer,
+                genre = excluded.genre,
+                duration = excluded.duration,
+                year = excluded.year,
+                track_number = excluded.track_number,
+                total_tracks = excluded.total_tracks,
+                disc_number = excluded.disc_number,
+                total_discs = excluded.total_discs,
+                source = excluded.source,
+                has_artwork = excluded.has_artwork,
+                has_lyrics = excluded.has_lyrics,
+                file_size = excluded.file_size,
+                mtime = excluded.mtime
+            """,
+            (
+                track_id,
+                track.title or filepath.stem,
+                track.artist or "",
+                track.album or "",
+                track.album_artist or "",
+                track.composer or "",
+                track.genre or "",
+                track.duration or 0,
+                track.year or 0,
+                track.track_number or 0,
+                track.total_tracks or 0,
+                track.disc_number or 0,
+                track.total_discs or 0,
+                track.source or "local",
+                str(filepath),
+                has_artwork,
+                has_lyrics,
+                file_size,
+                mtime,
+            ),
+        )
+        return True
+
+    def add_track(self, filepath: Path | str, track: Optional[TrackResult] = None) -> bool:
+        """Add or update a track in the library. Reads metadata from file if track is None."""
+        filepath = Path(filepath)
         with _DB_LOCK:
             conn = self._conn()
             try:
-                conn.execute(
-                    """INSERT INTO tracks
-                    (id, title, artist, album, album_artist, composer, genre, duration, year,
-                     track_number, total_tracks, disc_number, total_discs, source, filepath,
-                     has_artwork, has_lyrics, file_size, mtime)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(filepath) DO UPDATE SET
-                        id = excluded.id,
-                        title = excluded.title,
-                        artist = excluded.artist,
-                        album = excluded.album,
-                        album_artist = excluded.album_artist,
-                        composer = excluded.composer,
-                        genre = excluded.genre,
-                        duration = excluded.duration,
-                        year = excluded.year,
-                        track_number = excluded.track_number,
-                        total_tracks = excluded.total_tracks,
-                        disc_number = excluded.disc_number,
-                        total_discs = excluded.total_discs,
-                        source = excluded.source,
-                        has_artwork = excluded.has_artwork,
-                        has_lyrics = excluded.has_lyrics,
-                        file_size = excluded.file_size,
-                        mtime = excluded.mtime
-                    """,
-                    (
-                        track_id,
-                        track.title or filepath.stem,
-                        track.artist or "",
-                        track.album or "",
-                        track.album_artist or "",
-                        track.composer or "",
-                        track.genre or "",
-                        track.duration or 0,
-                        track.year or 0,
-                        track.track_number or 0,
-                        track.total_tracks or 0,
-                        track.disc_number or 0,
-                        track.total_discs or 0,
-                        track.source or "local",
-                        str(filepath),
-                        has_artwork,
-                        has_lyrics,
-                        file_size,
-                        mtime,
-                    ),
-                )
-                conn.commit()
-                return True
+                ok = self._save_track(conn, filepath, track)
+                if ok:
+                    conn.commit()
+                return ok
             except Exception:
                 return False
             finally:
@@ -198,6 +216,7 @@ class Library:
 
         count = 0
         seen_files: set[str] = set()
+        files_to_index: list[Path] = []
 
         for root, _, files in os.walk(d):
             for fname in files:
@@ -215,8 +234,21 @@ class Library:
                     if fp_str in existing_mtimes and abs(existing_mtimes[fp_str] - cur_mtime) < 0.01:
                         continue
 
-                    if self.add_track(fp):
-                        count += 1
+                    files_to_index.append(fp)
+
+        # Batch insert all new/changed files in a single transaction
+        if files_to_index:
+            with _DB_LOCK:
+                conn = self._conn()
+                try:
+                    for fp in files_to_index:
+                        if self._save_track(conn, fp, None):
+                            count += 1
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                finally:
+                    conn.close()
 
         # Prune missing files from library
         if prune:

@@ -70,10 +70,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     album_p.add_argument("-y", "--yes", action="store_true", help="Download entire album without prompt")
 
     # serve subcommand
-    serve_p = sub.add_parser("serve", help="Start the web music player")
-    serve_p.add_argument("-p", "--port", type=int, help="Port (default: 8080)")
+    # serve subcommand (also aliased as 'web')
+    serve_p = sub.add_parser("serve", aliases=["web"], help="Start the web music player")
+    serve_p.add_argument("-p", "--port", type=int, help="Port (default: 5050)")
     serve_p.add_argument("--host", help="Bind address (default: 127.0.0.1)")
     serve_p.add_argument("--lan", action="store_true", help="Allow LAN access (binds 0.0.0.0)")
+    serve_p.add_argument("--open", action="store_true", help="Open web player in default browser")
 
     # scan subcommand
     scan_p = sub.add_parser("scan", help="Scan download directory and update music library index")
@@ -82,6 +84,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # config subcommand
     config_p = sub.add_parser("config", help="View or modify configuration")
+    config_p.add_argument("action", nargs="?", choices=["get", "set", "show", "path", "reset"], help="Action to perform")
+    config_p.add_argument("key", nargs="?", help="Configuration key")
+    config_p.add_argument("value", nargs="?", help="Configuration value (for set)")
     config_p.add_argument("--get", metavar="KEY", help="Get a specific config value")
     config_p.add_argument("--set", nargs=2, metavar=("KEY", "VALUE"), help="Set a specific config value")
     config_p.add_argument("--path", action="store_true", help="Show config file path")
@@ -95,7 +100,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         return _cmd_download(args)
     elif args.command == "album":
         return _cmd_album(args)
-    elif args.command == "serve":
+    elif args.command in ("serve", "web"):
         return _cmd_serve(args)
     elif args.command == "scan":
         return _cmd_scan(args)
@@ -108,9 +113,6 @@ def main(argv: Optional[list[str]] = None) -> int:
             run_tui(no_clear=args.no_clear)
         except (KeyboardInterrupt, SystemExit):
             pass
-        finally:
-            if "pytest" not in sys.modules:
-                os._exit(0)
         return 0
 
 
@@ -310,12 +312,17 @@ def _cmd_serve(args) -> int:
     from zoink.web import start_server
 
     config = Config.get()
-    if args.port:
+    if getattr(args, "port", None):
         config["server_port"] = args.port
-    if args.host:
+    if getattr(args, "host", None):
         config["server_host"] = args.host
-    if args.lan:
+    if getattr(args, "lan", False):
         config["server_lan"] = True
+
+    if getattr(args, "open", False):
+        import webbrowser
+        host = "127.0.0.1" if config.server_host in ("0.0.0.0", "127.0.0.1") else config.server_host
+        webbrowser.open(f"http://{host}:{config.server_port}")
 
     try:
         start_server(config)
@@ -345,24 +352,30 @@ def _cmd_config(args) -> int:
     _print_header("Configuration")
     config = Config.get()
 
-    if args.path:
+    action = getattr(args, "action", None)
+    if action == "path" or args.path:
         console.print(f"Config path: [bold]{CONFIG_FILE}[/bold]")
         return 0
 
-    if args.reset:
+    if action == "reset" or args.reset:
         config.reset()
         console.print("[green]✓[/green] Configuration reset to defaults.")
         return 0
 
-    if args.get:
-        val = config.get_key(args.get)
-        console.print(f"{args.get}: [bold]{val}[/bold]")
+    get_key = args.get or (args.key if action == "get" else None)
+    if get_key:
+        val = config.get_key(get_key)
+        console.print(f"{get_key}: [bold]{val}[/bold]")
         return 0
 
     if args.set:
         key, val = args.set
         config.set_key(key, val)
         console.print(f"[green]✓[/green] Set [bold]{key}[/bold] = [bold]{val}[/bold]")
+        return 0
+    elif action == "set" and args.key and args.value:
+        config.set_key(args.key, args.value)
+        console.print(f"[green]✓[/green] Set [bold]{args.key}[/bold] = [bold]{args.value}[/bold]")
         return 0
 
     table = Table(box=None, show_header=True, header_style="bold cyan")

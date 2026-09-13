@@ -85,6 +85,10 @@ def _resolve_safe_path(arg1: str | Path, arg2: str | Path) -> Optional[Path]:
         clean = urllib.parse.unquote(rel_path or "").strip()
         if not clean or "\x00" in clean:
             return None
+        # Strip any leading slashes/backslashes to ensure resolution is relative to base_dir
+        clean = clean.lstrip("/\\")
+        if not clean:
+            return None
         target = (base_dir / clean).resolve()
         base_resolved = base_dir.resolve()
         if target.is_relative_to(base_resolved) and target.is_file():
@@ -173,7 +177,12 @@ def _stream_file(filepath: Path, mime: str, as_attachment: bool = False, custom_
 
     fname = custom_filename or filepath.name
     ascii_fname = fname.encode("ascii", "replace").decode("ascii").replace('"', "")
-    disp = f'attachment; filename="{ascii_fname}"' if as_attachment else f'inline; filename="{ascii_fname}"'
+    encoded_fname = urllib.parse.quote(fname, safe="")
+    disp = (
+        f'attachment; filename="{ascii_fname}"; filename*=UTF-8\'\'{encoded_fname}'
+        if as_attachment
+        else f'inline; filename="{ascii_fname}"; filename*=UTF-8\'\'{encoded_fname}'
+    )
 
     range_header = request.headers.get("Range")
     if range_header:
@@ -620,10 +629,16 @@ def _stream_zip_archive(files: list[tuple[Path, str]], zip_name: str) -> Respons
     tmp.close()
 
     try:
+        written = 0
         with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for filepath, arcname in files:
                 if filepath.exists() and filepath.is_file():
                     zf.write(filepath, arcname=arcname)
+                    written += 1
+        if written == 0:
+            if tmp_path.exists():
+                tmp_path.unlink()
+            return Response("No existing files to archive", status=404)
     except Exception as exc:
         if tmp_path.exists():
             tmp_path.unlink()
@@ -649,9 +664,11 @@ def _stream_zip_archive(files: list[tuple[Path, str]], zip_name: str) -> Respons
             except OSError:
                 pass
 
+    ascii_zip = zip_name.encode("ascii", "replace").decode("ascii").replace('"', "")
+    encoded_zip = urllib.parse.quote(zip_name, safe="")
     headers = {
         "Content-Type": "application/zip",
-        "Content-Disposition": f'attachment; filename="{zip_name}"',
+        "Content-Disposition": f'attachment; filename="{ascii_zip}"; filename*=UTF-8\'\'{encoded_zip}',
         "Content-Length": str(size),
     }
     return Response(generate(), status=200, headers=headers)

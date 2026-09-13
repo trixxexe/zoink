@@ -99,6 +99,8 @@ def test_download_resets_cancelled(tmp_path, monkeypatch):
 
     monkeypatch.setattr(yt_dlp, "YoutubeDL", DummyYDL)
     monkeypatch.setattr("zoink.downloader.verify_audio_file", lambda p: True)
+    monkeypatch.setattr("zoink.downloader.fetch_artwork", lambda *args, **kwargs: None)
+    monkeypatch.setattr("zoink.downloader.fetch_lyrics", lambda *args, **kwargs: None)
 
     job = dm.download(track)
     assert dm._cancelled is False

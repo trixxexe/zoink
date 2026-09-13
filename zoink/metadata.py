@@ -70,24 +70,44 @@ def _cover_from_data(data: bytes) -> Picture:
 
 
 def verify_audio_file(filepath: Path) -> bool:
-    """Verify that an audio file exists, has non-trivial size, and is readable."""
+    """Verify that an audio file exists, has non-trivial size, and has valid container/audio headers."""
     if not filepath.exists() or not filepath.is_file():
         return False
     try:
         size = filepath.stat().st_size
-        if size < 4096:  # Less than 4KB is almost certainly truncated/empty
+        if size < 2048:  # Less than 2KB is almost certainly truncated/empty
             return False
         # Try loading with mutagen to verify container integrity
-        mf = mutagen.File(filepath)
-        if mf is None:
-            # Fallback for plain header check
-            return size > 8192
-        # Check audio info if available
-        if hasattr(mf, "info") and mf.info:
-            length = getattr(mf.info, "length", 0)
-            if length and length > 0:
+        try:
+            mf = mutagen.File(filepath)
+            if mf is not None:
                 return True
-        return True
+        except Exception:
+            pass
+
+        # If mutagen could not parse, check magic bytes for standard audio containers
+        with open(filepath, "rb") as f:
+            header = f.read(32)
+        if len(header) < 4:
+            return False
+
+        # MP3 ID3 header or sync word
+        if header.startswith(b"ID3") or (len(header) >= 2 and header[0] == 0xFF and (header[1] & 0xE0) == 0xE0):
+            return True
+        # M4A/MP4/AAC container: "ftyp" at offset 4 or ADTS sync word
+        if (len(header) >= 8 and header[4:8] == b"ftyp") or (len(header) >= 2 and header[0] == 0xFF and (header[1] & 0xF6) == 0xF0):
+            return True
+        # FLAC: "fLaC"
+        if header.startswith(b"fLaC"):
+            return True
+        # OGG/Opus: "OggS"
+        if header.startswith(b"OggS"):
+            return True
+        # RIFF WAVE
+        if header.startswith(b"RIFF") and len(header) >= 12 and header[8:12] == b"WAVE":
+            return True
+
+        return False
     except Exception:
         return False
 
@@ -414,24 +434,26 @@ def _read_m4a(fp: Path) -> Optional[TrackResult]:
     except Exception:
         return None
 
-    title = str(tags.get("\xa9nam", [fp.stem])[0])
-    artist = str(tags.get("\xa9ART", [""])[0])
-    album = str(tags.get("\xa9alb", [""])[0])
-    album_artist = str(tags.get("aART", [""])[0])
-    composer = str(tags.get("\xa9wrt", [""])[0])
-    genre = str(tags.get("\xa9gen", [""])[0])
-    year = _safe_int(str(tags.get("\xa9day", ["0"])[0]))
+    title = str((tags.get("\xa9nam") or [fp.stem])[0])
+    artist = str((tags.get("\xa9ART") or [""])[0])
+    album = str((tags.get("\xa9alb") or [""])[0])
+    album_artist = str((tags.get("aART") or [""])[0])
+    composer = str((tags.get("\xa9wrt") or [""])[0])
+    genre = str((tags.get("\xa9gen") or [""])[0])
+    year = _safe_int(str((tags.get("\xa9day") or ["0"])[0]))
 
-    trkn = tags.get("trkn", [(0, 0)])[0]
+    trkn_list = tags.get("trkn") or [(0, 0)]
+    trkn = trkn_list[0] if trkn_list else (0, 0)
     track_num = trkn[0] if len(trkn) > 0 else 0
     total_tracks = trkn[1] if len(trkn) > 1 else 0
 
-    disk = tags.get("disk", [(0, 0)])[0]
+    disk_list = tags.get("disk") or [(0, 0)]
+    disk = disk_list[0] if disk_list else (0, 0)
     disc_num = disk[0] if len(disk) > 0 else 0
     total_discs = disk[1] if len(disk) > 1 else 0
 
     has_artwork = "covr" in tags and len(tags["covr"]) > 0
-    lyrics = str(tags.get("\xa9lyr", [""])[0])
+    lyrics = str((tags.get("\xa9lyr") or [""])[0])
 
     duration = int(getattr(audio.info, "length", 0)) if hasattr(audio, "info") and audio.info else 0
 

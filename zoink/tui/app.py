@@ -100,6 +100,7 @@ class ZoinKTUI:
         on_invalidate: Optional[Callable[[], None]] = None,
         on_refresh: Optional[Callable[[], None]] = None,
         on_theme_change: Optional[Callable[[str], None]] = None,
+        on_request_exit: Optional[Callable[[], None]] = None,
     ):
         self.config = config or Config.get()
         self.provider = provider or YouTubeProvider()
@@ -107,12 +108,15 @@ class ZoinKTUI:
         self.dl_manager = downloader or DownloadManager(self.config)
         self.on_invalidate = on_invalidate or on_refresh
         self.on_theme_change = on_theme_change
+        self.on_request_exit = on_request_exit
 
         # State machine
         self.phase: TUIPhase = TUIPhase.INPUT
         self.prev_phase: TUIPhase = TUIPhase.INPUT
         self.theme_mode: str = "auto"
         self.should_exit: bool = False
+        self._shutdown_lock = threading.Lock()
+        self._is_shutting_down: bool = False
 
         # Input screen state
         self.input_text: str = ""
@@ -169,12 +173,15 @@ class ZoinKTUI:
         self.playback_process: Optional[subprocess.Popen] = None
         self.playing_track: Optional[dict] = None
         self.playback_status_text: str = ""
+        self._playing_with_termux: bool = False
 
         # Active background cancel flag
         self.is_cancelled: bool = False
 
     def notify(self) -> None:
-        """Request UI repaint."""
+        """Request UI repaint. No-op if shutting down or exiting."""
+        if self.should_exit or self._is_shutting_down:
+            return
         if self.on_invalidate:
             try:
                 self.on_invalidate()
@@ -206,9 +213,29 @@ class ZoinKTUI:
 
     def request_exit(self) -> None:
         """Signal TUI application to exit cleanly."""
-        self.stop_audio()
-        self.should_exit = True
-        self.notify()
+        if self.on_request_exit:
+            self.on_request_exit()
+        else:
+            self.shutdown()
+
+    def shutdown(self) -> None:
+        """Perform a graceful, idempotent shutdown of all TUI background resources."""
+        with self._shutdown_lock:
+            if self._is_shutting_down:
+                return
+            self._is_shutting_down = True
+            self.should_exit = True
+            self.is_cancelled = True
+
+        try:
+            self.dl_manager.cancel_all()
+        except Exception:
+            pass
+
+        try:
+            self.stop_audio(silent=True)
+        except Exception:
+            pass
 
     def insert_text(self, text: str) -> None:
         """Insert text at current input cursor position."""
@@ -335,7 +362,7 @@ class ZoinKTUI:
             try:
                 if "list=" in url or "/album" in url or "/playlist" in url:
                     alb = self.provider.resolve_album(url)
-                    if self.is_cancelled:
+                    if self.is_cancelled or self.should_exit:
                         return
                     if alb and alb.tracks:
                         self.album_result = alb
@@ -346,14 +373,14 @@ class ZoinKTUI:
                         return
 
                 track = self.provider.resolve_track(url)
-                if self.is_cancelled:
+                if self.is_cancelled or self.should_exit:
                     return
                 if track:
                     self.inspect_track(track)
                 else:
                     self.show_error("Could not resolve media stream from this URL.")
             except Exception as e:
-                if not self.is_cancelled:
+                if not (self.is_cancelled or self.should_exit):
                     self.show_error(f"Failed to inspect URL: {e}")
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -370,7 +397,7 @@ class ZoinKTUI:
         def _worker():
             try:
                 results = self.provider.search_tracks(query, limit=10)
-                if self.is_cancelled:
+                if self.is_cancelled or self.should_exit:
                     return
                 if not results:
                     self.show_error(f"No matching tracks found for '{query}'.")
@@ -380,7 +407,7 @@ class ZoinKTUI:
                 self.phase = TUIPhase.SEARCH_RESULTS
                 self.notify()
             except Exception as e:
-                if not self.is_cancelled:
+                if not (self.is_cancelled or self.should_exit):
                     self.show_error(f"Search failed: {e}")
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -477,6 +504,8 @@ class ZoinKTUI:
             track = self.selected_track
 
             def _on_progress(job: DownloadJob):
+                if self.should_exit or self._is_shutting_down:
+                    return
                 self.download_job = job
                 self.download_progress = job.progress
                 if job.speed > 0:
@@ -504,6 +533,8 @@ class ZoinKTUI:
             def _worker():
                 try:
                     job = self.dl_manager.download(track, on_progress=_on_progress)
+                    if self.should_exit or self._is_shutting_down:
+                        return
                     if job.state == DownloadState.DONE and self.phase != TUIPhase.DONE:
                         self.download_outcome_path = str(job.filepath) if job.filepath else ""
                         self.download_outcome_title = track.title
@@ -519,7 +550,7 @@ class ZoinKTUI:
                     elif job.state == DownloadState.FAILED and self.phase != TUIPhase.ERROR:
                         self.show_error(job.error or "Download failed. Please check network.")
                 except Exception as exc:
-                    if self.is_cancelled:
+                    if self.is_cancelled or self.should_exit:
                         if self.phase == TUIPhase.DOWNLOADING:
                             self.phase = self.prev_phase if self.prev_phase != TUIPhase.DOWNLOADING else TUIPhase.INPUT
                             self.notify()
@@ -547,6 +578,8 @@ class ZoinKTUI:
             self.notify()
 
             def _on_batch_complete(job: DownloadJob):
+                if self.should_exit or self._is_shutting_down:
+                    return
                 if job.state == DownloadState.DONE and job.filepath:
                     self.library.add_track(Path(job.filepath), job.track)
                 self.batch_current_idx = min(self.batch_current_idx + 1, self.batch_total_count)
@@ -557,8 +590,8 @@ class ZoinKTUI:
             def _batch_worker():
                 try:
                     jobs = self.dl_manager.download_batch(selected, on_complete=_on_batch_complete)
-                    if self.is_cancelled:
-                        if self.phase == TUIPhase.DOWNLOADING:
+                    if self.is_cancelled or self.should_exit:
+                        if self.phase == TUIPhase.DOWNLOADING and not self.should_exit:
                             self.phase = self.prev_phase if self.prev_phase != TUIPhase.DOWNLOADING else TUIPhase.INPUT
                             self.notify()
                         return
@@ -568,8 +601,8 @@ class ZoinKTUI:
                     self.phase = TUIPhase.DONE
                     self.notify()
                 except Exception as exc:
-                    if self.is_cancelled:
-                        if self.phase == TUIPhase.DOWNLOADING:
+                    if self.is_cancelled or self.should_exit:
+                        if self.phase == TUIPhase.DOWNLOADING and not self.should_exit:
                             self.phase = self.prev_phase if self.prev_phase != TUIPhase.DOWNLOADING else TUIPhase.INPUT
                             self.notify()
                     else:
@@ -577,17 +610,21 @@ class ZoinKTUI:
 
             threading.Thread(target=_batch_worker, daemon=True).start()
 
-    def cancel_current(self) -> None:
+    def cancel_current(self, silent: bool = False) -> None:
         """Cancel the active operation and return to previous state."""
         self.is_cancelled = True
-        self.dl_manager.cancel_all()
+        try:
+            self.dl_manager.cancel_all()
+        except Exception:
+            pass
         if self.phase == TUIPhase.DOWNLOADING:
             self.phase = self.prev_phase if self.prev_phase != TUIPhase.DOWNLOADING else TUIPhase.INPUT
         elif self.phase in (TUIPhase.PROBING, TUIPhase.SEARCHING):
             self.phase = self.prev_phase if self.prev_phase not in (TUIPhase.PROBING, TUIPhase.SEARCHING) else TUIPhase.INPUT
         else:
             self.phase = TUIPhase.INPUT
-        self.notify()
+        if not silent and not self.should_exit:
+            self.notify()
 
     def show_error(self, message: str) -> None:
         """Display an error screen with a human-readable explanation."""
@@ -728,6 +765,7 @@ class ZoinKTUI:
                         stdin=subprocess.DEVNULL,
                         start_new_session=True,
                     )
+                    self._playing_with_termux = (name == "termux-media-player")
                     self.playing_track = track
                     self.playback_status_text = f"▶ Playing: {track.get('title', 'Unknown')} — {track.get('artist', 'Unknown')}"
                     self.notify()
@@ -738,26 +776,35 @@ class ZoinKTUI:
         self.library_status_message = "No media player found (mpv/ffplay/termux-media-player)."
         self.notify()
 
-    def stop_audio(self) -> None:
+    def stop_audio(self, silent: bool = False) -> None:
         """Stop any active audio playback."""
         if self.playback_process:
             try:
                 self.playback_process.terminate()
-                self.playback_process.wait(timeout=0.2)
+                self.playback_process.wait(timeout=0.1)
             except Exception:
                 try:
                     self.playback_process.kill()
                 except Exception:
                     pass
             self.playback_process = None
-        if shutil.which("termux-media-player"):
+
+        if self._playing_with_termux and shutil.which("termux-media-player"):
             try:
-                subprocess.run(["termux-media-player", "stop"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(
+                    ["termux-media-player", "stop"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=1,
+                )
             except Exception:
                 pass
+            self._playing_with_termux = False
+
         self.playing_track = None
         self.playback_status_text = ""
-        self.notify()
+        if not silent and not self.should_exit:
+            self.notify()
 
     def handle_delete(self) -> None:
         """Request deletion confirmation for current track."""
@@ -911,6 +958,8 @@ class ZoinKTUI:
         self.notify()
 
     def handle_enter(self) -> None:
+        if self.should_exit or self._is_shutting_down:
+            return
         if self.phase == TUIPhase.INPUT:
             self.handle_submit()
         elif self.phase == TUIPhase.SEARCH_RESULTS:
@@ -931,6 +980,8 @@ class ZoinKTUI:
             self.go_home()
 
     def handle_escape(self) -> None:
+        if self.should_exit or self._is_shutting_down:
+            return
         if self.phase == TUIPhase.LIBRARY:
             if self.confirm_delete_id:
                 self.handle_confirm_no()
@@ -990,6 +1041,8 @@ class ZoinKTUI:
         def _alb_worker():
             try:
                 alb = self.provider.resolve_album(query)
+                if self.is_cancelled or self.should_exit:
+                    return
                 if alb and alb.tracks:
                     self.album_result = alb
                     self.album_cursor = 0
@@ -998,8 +1051,10 @@ class ZoinKTUI:
                 else:
                     self.show_error(f"Could not resolve full album for '{track.title}'.")
             except Exception as e:
-                self.show_error(f"Album lookup error: {e}")
-            self.notify()
+                if not (self.is_cancelled or self.should_exit):
+                    self.show_error(f"Album lookup error: {e}")
+            if not (self.is_cancelled or self.should_exit):
+                self.notify()
 
         threading.Thread(target=_alb_worker, daemon=True).start()
 
@@ -1069,7 +1124,7 @@ class ZoinKTUI:
         total_content_lines = sum(text.count("\n") for item in content_lines for text in [item[1]])
 
         avail_for_content = max(height - 3, 5)
-        pad_top = max(1, (avail_for_content - total_content_lines) // 2)
+        pad_top = max(0, (avail_for_content - total_content_lines) // 2)
         pad_bottom = max(0, avail_for_content - total_content_lines - pad_top)
 
         result: list[tuple] = []

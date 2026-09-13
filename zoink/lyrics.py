@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import threading
 from typing import Optional
 
 import requests
@@ -10,6 +11,9 @@ import yt_dlp
 
 _SESSION = requests.Session()
 _SESSION.headers.update({"User-Agent": "ZoinK/0.1 (https://github.com/zoink-music)"})
+
+_LYRICS_CACHE: dict[str, str] = {}
+_LYRICS_CACHE_LOCK = threading.Lock()
 
 
 def fetch_lyrics(
@@ -31,15 +35,34 @@ def fetch_lyrics(
         artist = source
         track_id = kwargs.get("track_id", "")
         source = kwargs.get("source", "youtube")
+
+    cache_key = f"{track_id.strip()}::{artist.strip().lower()}::{title.strip().lower()}"
+    if cache_key.strip("::"):
+        with _LYRICS_CACHE_LOCK:
+            if cache_key in _LYRICS_CACHE:
+                return _LYRICS_CACHE[cache_key]
+
     # 1. Try LRCLIB if track title is available
     if title:
         lyrics = _fetch_lrclib(title=title, artist=artist, album=album, duration=duration)
         if lyrics:
+            if cache_key.strip("::"):
+                with _LYRICS_CACHE_LOCK:
+                    if len(_LYRICS_CACHE) > 150:
+                        _LYRICS_CACHE.clear()
+                    _LYRICS_CACHE[cache_key] = lyrics
             return lyrics
 
     # 2. Try yt-dlp subtitle/captions if track_id and source == 'youtube'
     if source == "youtube" and track_id:
-        return _fetch_ytdlp_captions(track_id)
+        lyrics = _fetch_ytdlp_captions(track_id)
+        if lyrics:
+            if cache_key.strip("::"):
+                with _LYRICS_CACHE_LOCK:
+                    if len(_LYRICS_CACHE) > 150:
+                        _LYRICS_CACHE.clear()
+                    _LYRICS_CACHE[cache_key] = lyrics
+            return lyrics
 
     return None
 

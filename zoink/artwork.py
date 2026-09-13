@@ -10,11 +10,16 @@ from typing import Optional
 
 import requests
 
+import threading
+
 _SESSION = requests.Session()
 _SESSION.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ZoinK/0.1"})
 
 _MAX_SIZE = 15 * 1024 * 1024  # 15 MB
-_TIMEOUT = 15
+_TIMEOUT = 6
+
+_ARTWORK_CACHE: dict[str, bytes] = {}
+_ARTWORK_CACHE_LOCK = threading.Lock()
 
 
 def fetch_artwork(
@@ -24,6 +29,12 @@ def fetch_artwork(
     album: str = "",
 ) -> Optional[bytes]:
     """Download artwork from a URL or fallback search. Returns JPEG/PNG bytes or None."""
+    cache_key = url.strip() or f"{artist.strip().lower()}::{album.strip().lower() or title.strip().lower()}"
+    if cache_key:
+        with _ARTWORK_CACHE_LOCK:
+            if cache_key in _ARTWORK_CACHE:
+                return _ARTWORK_CACHE[cache_key]
+
     candidates = []
     if url:
         # Check if URL can be upgraded (e.g., YouTube thumbnail URLs)
@@ -32,7 +43,13 @@ def fetch_artwork(
     for candidate_url in candidates:
         data = _download_image(candidate_url)
         if data:
-            return _normalize_image(data)
+            norm = _normalize_image(data)
+            if norm and cache_key:
+                with _ARTWORK_CACHE_LOCK:
+                    if len(_ARTWORK_CACHE) > 100:
+                        _ARTWORK_CACHE.clear()
+                    _ARTWORK_CACHE[cache_key] = norm
+            return norm
 
     # Fallback search if URL wasn't available or all candidates failed
     if title and artist:
@@ -40,7 +57,13 @@ def fetch_artwork(
         if fallback_url:
             data = _download_image(fallback_url)
             if data:
-                return _normalize_image(data)
+                norm = _normalize_image(data)
+                if norm and cache_key:
+                    with _ARTWORK_CACHE_LOCK:
+                        if len(_ARTWORK_CACHE) > 100:
+                            _ARTWORK_CACHE.clear()
+                        _ARTWORK_CACHE[cache_key] = norm
+                return norm
 
     return None
 
@@ -114,7 +137,17 @@ def _normalize_image(data: bytes) -> bytes:
 
 
 def _convert_webp_to_jpeg(webp_data: bytes) -> Optional[bytes]:
-    """Convert WebP bytes to JPEG bytes using ffmpeg."""
+    """Convert WebP bytes to JPEG bytes using ffmpeg in-memory or fallback."""
+    # Fast path: in-memory streaming via stdin/stdout pipe
+    try:
+        cmd = ["ffmpeg", "-y", "-i", "pipe:0", "-f", "image2", "-c:v", "mjpeg", "-q:v", "2", "pipe:1"]
+        proc = subprocess.run(cmd, input=webp_data, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5)
+        if proc.returncode == 0 and proc.stdout and proc.stdout[:3] == b"\xff\xd8\xff":
+            return proc.stdout
+    except Exception:
+        pass
+
+    # Fallback path: temporary files
     try:
         with tempfile.NamedTemporaryFile(suffix=".webp", delete=False) as in_f:
             in_f.write(webp_data)
@@ -122,7 +155,7 @@ def _convert_webp_to_jpeg(webp_data: bytes) -> Optional[bytes]:
         out_path = in_path.with_suffix(".jpg")
         try:
             cmd = ["ffmpeg", "-y", "-i", str(in_path), "-q:v", "2", str(out_path)]
-            proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+            proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=6)
             if proc.returncode == 0 and out_path.exists():
                 return out_path.read_bytes()
         finally:

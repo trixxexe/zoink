@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import threading
 from typing import Optional
 
 from prompt_toolkit.application import Application
@@ -37,23 +38,62 @@ def run_tui(no_clear: bool = False, non_interactive: bool = False) -> None:
         return
 
     app_ref: list[Optional[Application]] = [None]
+    exit_lock = threading.Lock()
+    has_exited = False
+
+    def safe_exit(result: int = 0) -> None:
+        nonlocal has_exited
+        with exit_lock:
+            if has_exited:
+                return
+            has_exited = True
+
+        # Idempotently shutdown all TUI background tasks and audio
+        tui.shutdown()
+
+        app = app_ref[0]
+        if app is None:
+            return
+
+        def _do_exit():
+            if app.is_running:
+                try:
+                    if hasattr(app, "future") and app.future and not app.future.done():
+                        app.exit(result=result)
+                except Exception:
+                    pass
+
+        if app.is_running:
+            loop = getattr(app, "loop", None)
+            if loop and not loop.is_closed():
+                try:
+                    import asyncio
+                    try:
+                        current_loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        current_loop = None
+                    if current_loop is loop:
+                        _do_exit()
+                    else:
+                        loop.call_soon_threadsafe(_do_exit)
+                except Exception:
+                    _do_exit()
+            else:
+                _do_exit()
 
     def on_refresh() -> None:
-        if app_ref[0] and app_ref[0].is_running:
-            if tui.should_exit:
-                if app_ref[0].loop and not app_ref[0].loop.is_closed():
-                    app_ref[0].loop.call_soon_threadsafe(lambda: app_ref[0].exit(result=0))
-                else:
-                    app_ref[0].exit(result=0)
-                return
-            try:
-                app_ref[0].invalidate()
-            except Exception:
-                pass
+        app = app_ref[0]
+        if not app or not app.is_running or tui.should_exit:
+            return
+        try:
+            app.invalidate()
+        except Exception:
+            pass
 
     def on_theme_change(new_mode: str) -> None:
-        if app_ref[0]:
-            app_ref[0].style = get_style(new_mode)
+        app = app_ref[0]
+        if app and app.is_running:
+            app.style = get_style(new_mode)
             on_refresh()
 
     tui = ZoinKTUI(
@@ -64,6 +104,7 @@ def run_tui(no_clear: bool = False, non_interactive: bool = False) -> None:
         on_invalidate=on_refresh,
         on_refresh=on_refresh,
         on_theme_change=on_theme_change,
+        on_request_exit=lambda: safe_exit(0),
     )
 
     kb = KeyBindings()
@@ -238,10 +279,7 @@ def run_tui(no_clear: bool = False, non_interactive: bool = False) -> None:
         if tui.phase in (TUIPhase.DONE, TUIPhase.ERROR, TUIPhase.SEARCH_RESULTS, TUIPhase.LIBRARY, TUIPhase.LIBRARY_DETAIL, TUIPhase.HELP):
             tui.go_home()
         else:
-            tui.should_exit = True
-            tui.cancel_current()
-            tui.stop_audio()
-            event.app.exit(result=0)
+            safe_exit(0)
 
     @kb.add(Keys.BracketedPaste)
     def _paste(event):
@@ -258,10 +296,7 @@ def run_tui(no_clear: bool = False, non_interactive: bool = False) -> None:
     @kb.add("c-c")
     @kb.add("c-d")
     def _exit(event):
-        tui.should_exit = True
-        tui.cancel_current()
-        tui.stop_audio()
-        event.app.exit(result=0)
+        safe_exit(0)
 
     # --- Screen Content & Layout ---
     def get_screen_content():
@@ -286,18 +321,16 @@ def run_tui(no_clear: bool = False, non_interactive: bool = False) -> None:
     except (KeyboardInterrupt, EOFError):
         pass
     finally:
-        tui.should_exit = True
-        tui.cancel_current()
-        tui.stop_audio()
-        # Full terminal restoration (alternate screen, cursor, mouse modes)
+        safe_exit(0)
+        # Full terminal restoration (alternate screen, cursor, mouse modes, bracketed paste)
         if not no_clear:
-            sys.stdout.write("\033[?1049l\033[?25h\033[?1000l\033[?1002l\033[?1003l\033[?1006l")
+            sys.stdout.write("\033[?1049l\033[?25h\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?2004l")
             sys.stdout.flush()
 
         # Clean polite exit summary if something was downloaded
         if tui.download_outcome_path:
             print(f"\n✓ ZoinK: Downloaded {tui.download_outcome_title} to {tui.download_outcome_path}")
-        print(f"\n✓ ZoinK stopped. Goodbye! {ZoinKTUI.WATERMARK}\n")
+        print("\nGoodbye from ZoinK.\n")
         sys.stdout.flush()
 
 
