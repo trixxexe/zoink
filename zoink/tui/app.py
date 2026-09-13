@@ -97,6 +97,7 @@ class ZoinKTUI:
         provider: Optional[YouTubeProvider] = None,
         library: Optional[Library] = None,
         downloader: Optional[DownloadManager] = None,
+        dl_manager: Optional[DownloadManager] = None,
         on_invalidate: Optional[Callable[[], None]] = None,
         on_refresh: Optional[Callable[[], None]] = None,
         on_theme_change: Optional[Callable[[str], None]] = None,
@@ -105,7 +106,7 @@ class ZoinKTUI:
         self.config = config or Config.get()
         self.provider = provider or YouTubeProvider()
         self.library = library or Library(self.config)
-        self.dl_manager = downloader or DownloadManager(self.config)
+        self.dl_manager = downloader or dl_manager or DownloadManager(self.config)
         self.on_invalidate = on_invalidate or on_refresh
         self.on_theme_change = on_theme_change
         self.on_request_exit = on_request_exit

@@ -4,14 +4,14 @@
 
 ZoinK is a standalone, terminal-first music downloader and local audio streaming player designed for performance and reliability on Android (Termux) and Linux desktop/server environments.
 
-It bridges a Pablo Stanley **Yoinks-inspired minimalist Terminal UI** with a **modern AMOLED Spotify-style local web player**, underpinned by a multi-format audio conversion and tagging engine.
+It is a **yt-dlp wrapper in TUI** with a **modern AMOLED Spotify-style local web player**, underpinned by a multi-format audio conversion and tagging engine.
 
 ---
 
 ## ✨ Features
 
 - **⚡ Blazing Fast Architecture**: In-memory caching for artwork and lyrics, optimized pipe-based conversion, and WAL-mode SQLite indexing.
-- **🎨 Yoinks-Inspired TUI**: Distraction-free, centered terminal interface with smooth animations, audio playback preview, slash commands, and keyboard/mouse navigation.
+- **🎨 Minimalistic TUI**: Distraction-free, centered terminal interface with smooth animations, audio playback preview, slash commands, and keyboard/mouse navigation.
 - **📱 Minimal AMOLED Web Player**: Clean Spotify-style web interface with dedicated responsive layouts for mobile and desktop, HTTP 206 partial-range streaming, instant search, and background download management.
 - **📦 Multi-Container Audio Support**: Native and converted support for **MP3**, **M4A (AAC)**, **FLAC**, **OGG**, and **Opus**.
 - **🏷️ Automated Tagging & Cover Art**: Embedded high-resolution cover artwork from iTunes/sources and synchronized/plain lyrics from LRCLIB with yt-dlp subtitle fallbacks.
@@ -44,6 +44,7 @@ pkg install -y termux-api
 git clone https://github.com/zoink-music/zoink.git
 cd zoink
 pip install -e .
+zoink
 ```
 
 ### Debian / Ubuntu / Raspberry Pi OS
@@ -57,6 +58,7 @@ sudo apt install -y python3 python3-pip ffmpeg git
 git clone https://github.com/zoink-music/zoink.git
 cd zoink
 pip install -e .
+zoink
 ```
 
 ### Arch Linux
@@ -66,6 +68,7 @@ sudo pacman -S python python-pip ffmpeg git
 git clone https://github.com/zoink-music/zoink.git
 cd zoink
 pip install -e .
+zoink
 ```
 
 ---
