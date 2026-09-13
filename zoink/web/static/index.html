@@ -1,0 +1,1862 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ZoinK — AMOLED Music Stream & Player</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    :root {
+      --bg-base: #000000;
+      --bg-surface: #101010;
+      --bg-surface-elevated: #181818;
+      --bg-surface-hover: #222222;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-hover: rgba(255, 255, 255, 0.16);
+      --text-primary: #ffffff;
+      --text-muted: #8e8e93;
+      --accent: #00f2fe;
+      --accent-hover: #38bdf8;
+      --accent-glow: rgba(0, 242, 254, 0.18);
+      --accent-dim: rgba(0, 242, 254, 0.1);
+    }
+
+    [data-theme="midnight"] {
+      --bg-base: #06080d;
+      --bg-surface: #0e121a;
+      --bg-surface-elevated: #161c28;
+      --bg-surface-hover: #1e2638;
+      --border-subtle: rgba(255, 255, 255, 0.07);
+      --accent: #38bdf8;
+      --accent-hover: #60a5fa;
+      --accent-glow: rgba(56, 189, 248, 0.2);
+      --accent-dim: rgba(56, 189, 248, 0.12);
+    }
+
+    [data-theme="eclipse"] {
+      --bg-base: #08090a;
+      --bg-surface: #111417;
+      --bg-surface-elevated: #181d22;
+      --bg-surface-hover: #222930;
+      --border-subtle: rgba(255, 255, 255, 0.06);
+      --accent: #10b981;
+      --accent-hover: #34d399;
+      --accent-glow: rgba(168, 85, 247, 0.2);
+      --accent-dim: rgba(16, 185, 129, 0.12);
+    }
+
+    [data-theme="tokyo"] {
+      --bg-base: #050509;
+      --bg-surface: #100f1c;
+      --bg-surface-elevated: #1a182d;
+      --bg-surface-hover: #262342;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --accent: #a855f7;
+      --accent-hover: #c084fc;
+      --accent-glow: rgba(168, 85, 247, 0.22);
+      --accent-dim: rgba(168, 85, 247, 0.12);
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 9999px;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 12px;
+      width: 12px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent-glow);
+      opacity: 0;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+    }
+    .slider-container:hover input[type=range]::-webkit-slider-thumb,
+    input[type=range]:active::-webkit-slider-thumb {
+      opacity: 1;
+      transform: scale(1.15);
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    .fade-enter-active {
+      animation: fadeIn 0.2s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .pb-safe {
+      padding-bottom: env(safe-area-inset-bottom, 16px);
+    }
+  </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col antialiased">
+
+  <!-- REAL HTML5 AUDIO ELEMENT (Zero fake synth tones, universal format support) -->
+  <audio id="audio-player" preload="metadata" playsinline></audio>
+
+  <!-- APP SHELL CONTAINER (Edge to edge, pure responsive, NO phone frames) -->
+  <div class="flex-1 flex overflow-hidden w-full h-full relative">
+
+    <!-- DESKTOP SIDEBAR (visible md+) -->
+    <aside class="hidden md:flex flex-col w-64 lg:w-72 bg-[var(--bg-base)] border-r border-[var(--border-subtle)] select-none shrink-0 z-30">
+      
+      <!-- Brand Logo / Identity -->
+      <div class="p-6 pb-4 flex items-center justify-between">
+        <div class="flex items-center space-x-3 cursor-pointer" onclick="switchTab('home')">
+          <div class="w-8 h-8 rounded-lg bg-[var(--accent-dim)] border border-[var(--accent)] flex items-center justify-center text-[var(--accent)] font-mono font-black text-base shadow-sm">
+            Z
+          </div>
+          <div>
+            <span class="font-bold tracking-tight text-lg text-[var(--text-primary)]">ZoinK</span>
+            <span class="text-[10px] text-[var(--accent)] font-mono ml-1.5 px-1.5 py-0.5 rounded bg-[var(--accent-dim)] border border-[var(--accent)]">v0.1.0</span>
+          </div>
+        </div>
+        <button onclick="openSettingsModal()" title="Theme & Preferences" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1.5 rounded-lg hover:bg-[var(--bg-surface-elevated)] transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        </button>
+      </div>
+
+      <!-- Main Navigation -->
+      <nav class="px-4 py-2 space-y-1">
+        <button id="nav-home" onclick="switchTab('home')" class="w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition text-[var(--accent)] bg-[var(--accent-dim)]">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+          <span>Home</span>
+        </button>
+        <button id="nav-search" onclick="switchTab('search')" class="w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)]">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <span>Search & Zoink</span>
+        </button>
+        <button id="nav-library" onclick="switchTab('library')" class="w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)]">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+          <span>Your Library</span>
+        </button>
+        <button id="nav-queue" onclick="switchTab('queue')" class="w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)]">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/></svg>
+          <span>Play Queue</span>
+          <span id="queue-badge" class="ml-auto text-xs px-1.5 py-0.2 rounded-full bg-[var(--bg-surface-elevated)] text-[var(--text-muted)]">0</span>
+        </button>
+      </nav>
+
+      <!-- Divider -->
+      <div class="px-6 my-3">
+        <div class="border-t border-[var(--border-subtle)]"></div>
+      </div>
+
+      <!-- Quick Collections / Actions -->
+      <div class="flex-1 overflow-y-auto px-4 space-y-1">
+        <div class="px-3 py-1.5 text-[11px] font-semibold tracking-wider text-[var(--text-muted)] uppercase">
+          Library Views
+        </div>
+        <button onclick="filterLibrary('all')" class="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition text-left">
+          <span class="w-6 h-6 rounded bg-[var(--accent-dim)] text-[var(--accent)] flex items-center justify-center text-xs">♪</span>
+          <span class="truncate">All Songs</span>
+        </button>
+        <button onclick="filterLibrary('favorites')" class="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition text-left">
+          <span class="w-6 h-6 rounded bg-red-500/20 text-red-400 flex items-center justify-center text-xs">♥</span>
+          <span class="truncate">Favorite Tracks</span>
+        </button>
+        <button onclick="window.location.href='/api/download-all'" class="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition text-left">
+          <span class="w-6 h-6 rounded bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs">↓</span>
+          <span class="truncate">Export All (ZIP)</span>
+        </button>
+        <button onclick="rescanLibrary()" class="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition text-left">
+          <span class="w-6 h-6 rounded bg-purple-500/20 text-purple-400 flex items-center justify-center text-xs">↻</span>
+          <span class="truncate">Rescan Folder</span>
+        </button>
+      </div>
+
+      <!-- Compact System Status -->
+      <div class="p-4 border-t border-[var(--border-subtle)] text-xs text-[var(--text-muted)] flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span id="lib-count-status">0 tracks indexed</span>
+        </div>
+        <button onclick="openShortcutsModal()" class="hover:text-[var(--text-primary)] transition" title="Keyboard Shortcuts">
+          <kbd class="px-1.5 py-0.5 rounded bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] font-mono text-[10px]">?</kbd>
+        </button>
+      </div>
+    </aside>
+
+    <!-- MAIN VIEW AREA (True Responsive, Breathing Layout) -->
+    <main class="flex-1 flex flex-col h-full bg-[var(--bg-base)] overflow-hidden relative">
+
+      <!-- TOP BAR -->
+      <header class="h-16 px-4 md:px-8 border-b border-[var(--border-subtle)] flex items-center justify-between shrink-0 bg-[var(--bg-base)]/80 backdrop-blur-md z-20">
+        
+        <!-- Mobile Logo -->
+        <div class="flex md:hidden items-center space-x-2.5 cursor-pointer" onclick="switchTab('home')">
+          <div class="w-7 h-7 rounded bg-[var(--accent-dim)] border border-[var(--accent)] flex items-center justify-center text-[var(--accent)] font-mono font-black text-sm">
+            Z
+          </div>
+          <span class="font-bold text-base tracking-tight text-[var(--text-primary)]">ZoinK</span>
+        </div>
+
+        <!-- Desktop Search Container -->
+        <div class="hidden md:flex items-center space-x-4 flex-1 max-w-xl">
+          <div id="desktop-search-container" class="relative w-full">
+            <svg class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            <input 
+              type="text" 
+              id="global-search-input"
+              placeholder="Search library, artists, albums, or paste YouTube link..." 
+              oninput="handleSearchInput(this.value)"
+              class="w-full bg-[var(--bg-surface)] text-[var(--text-primary)] placeholder-[var(--text-muted)] text-sm rounded-full pl-10 pr-10 py-2 border border-[var(--border-subtle)] focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] focus:outline-none transition"
+            >
+            <button id="search-clear-btn" onclick="clearSearch()" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Header Right Actions -->
+        <div class="flex items-center space-x-2">
+          <button onclick="promptQuickZoink()" class="hidden sm:flex items-center space-x-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-[var(--accent-dim)] text-[var(--accent)] border border-[var(--accent)] hover:bg-[var(--accent)] hover:text-black transition">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            <span>Zoink URL</span>
+          </button>
+
+          <button onclick="openSettingsModal()" class="p-2 rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition" title="Theme & Settings">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- SCROLLABLE TAB CONTENTS -->
+      <div id="content-scroll" class="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-8 pb-32 md:pb-28">
+
+        <!-- TAB: HOME -->
+        <section id="view-home" class="space-y-8 max-w-7xl mx-auto fade-enter-active">
+          
+          <!-- Hero / Greeting -->
+          <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2 border-b border-[var(--border-subtle)]">
+            <div>
+              <p class="text-xs font-mono uppercase tracking-wider text-[var(--accent)]">Universal Audio Engine</p>
+              <h1 id="greeting-text" class="text-2xl md:text-3xl font-bold tracking-tight text-[var(--text-primary)] mt-1">Welcome to ZoinK</h1>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span class="text-xs text-[var(--text-muted)]">Mode:</span>
+              <span class="text-xs font-mono text-[var(--accent)] bg-[var(--accent-dim)] px-2 py-0.5 rounded border border-[var(--accent)]">Direct Stream & Transcode Fallback</span>
+            </div>
+          </div>
+
+          <!-- Empty State (Shown ONLY when library is empty) -->
+          <div id="home-empty-state" class="hidden text-center py-16 px-6 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] space-y-4">
+            <div class="w-14 h-14 mx-auto rounded-2xl bg-[var(--accent-dim)] border border-[var(--accent)] flex items-center justify-center text-[var(--accent)]">
+              <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
+            </div>
+            <div>
+              <h3 class="text-lg font-bold text-[var(--text-primary)]">No songs in your library yet</h3>
+              <p class="text-xs text-[var(--text-muted)] max-w-sm mx-auto mt-1">Search or zoink a YouTube URL to start building your offline library, or rescan your Music folder.</p>
+            </div>
+            <div class="flex items-center justify-center space-x-3 pt-2">
+              <button onclick="promptQuickZoink()" class="px-4 py-2 rounded-xl bg-[var(--accent)] text-black font-bold text-xs hover:bg-[var(--accent-hover)] transition">Zoink Song URL</button>
+              <button onclick="rescanLibrary()" class="px-4 py-2 rounded-xl bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-xs font-medium hover:border-[var(--border-hover)] transition">Rescan Music Folder</button>
+            </div>
+          </div>
+
+          <!-- Quick Jump Grid (Recently Added / Real Tracks) -->
+          <div id="quick-jump-section">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" id="quick-jump-grid">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- Featured Albums (Shown ONLY when albums exist in library) -->
+          <div id="featured-albums-section">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-lg md:text-xl font-bold tracking-tight text-[var(--text-primary)]">Albums</h2>
+              <button onclick="switchTab('library')" class="text-xs font-semibold text-[var(--accent)] hover:underline">See all →</button>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-5" id="featured-albums-grid">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- Real Library Tracks -->
+          <div id="popular-tracks-section">
+            <div class="flex items-center justify-between mb-4">
+              <div>
+                <h2 class="text-lg md:text-xl font-bold tracking-tight text-[var(--text-primary)]">Available Music</h2>
+                <p class="text-xs text-[var(--text-muted)]">Verified audio files stored in your local library</p>
+              </div>
+            </div>
+            <div class="divide-y divide-[var(--border-subtle)] border border-[var(--border-subtle)] rounded-xl bg-[var(--bg-surface)] overflow-hidden" id="popular-tracks-list">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB: SEARCH -->
+        <section id="view-search" class="hidden space-y-6 max-w-7xl mx-auto">
+          
+          <!-- Mobile search input -->
+          <div class="md:hidden">
+            <div class="relative">
+              <svg class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              <input 
+                type="text" 
+                id="mobile-search-input"
+                placeholder="Search tracks or paste URL..." 
+                oninput="handleSearchInput(this.value)"
+                class="w-full bg-[var(--bg-surface)] text-[var(--text-primary)] placeholder-[var(--text-muted)] text-sm rounded-xl pl-10 pr-4 py-3 border border-[var(--border-subtle)] focus:border-[var(--accent)] focus:outline-none"
+              >
+            </div>
+          </div>
+
+          <!-- Quick Filters -->
+          <div class="flex items-center space-x-2 overflow-x-auto pb-1 text-xs">
+            <button onclick="setSearchFilter('all')" class="search-filter-btn px-3.5 py-1.5 rounded-full font-medium transition bg-[var(--accent)] text-black" data-filter="all">All</button>
+            <button onclick="setSearchFilter('tracks')" class="search-filter-btn px-3.5 py-1.5 rounded-full font-medium transition bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-white border border-[var(--border-subtle)]" data-filter="tracks">Tracks</button>
+            <button onclick="setSearchFilter('albums')" class="search-filter-btn px-3.5 py-1.5 rounded-full font-medium transition bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-white border border-[var(--border-subtle)]" data-filter="albums">Albums</button>
+            <button onclick="setSearchFilter('artists')" class="search-filter-btn px-3.5 py-1.5 rounded-full font-medium transition bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-white border border-[var(--border-subtle)]" data-filter="artists">Artists</button>
+          </div>
+
+          <!-- Search Results Container -->
+          <div id="search-results-wrapper" class="space-y-4">
+            <div id="search-results-list" class="space-y-2">
+              <!-- Search items inserted dynamically -->
+            </div>
+          </div>
+
+          <!-- Search Empty Placeholder -->
+          <div id="search-empty-state" class="text-center py-16 text-[var(--text-muted)] space-y-2">
+            <svg class="w-12 h-12 mx-auto stroke-current opacity-40 mb-3" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            <p class="font-medium text-base text-[var(--text-primary)]">Search your music universe</p>
+            <p class="text-xs max-w-sm mx-auto">Search through your indexed songs, or query YouTube / SoundCloud online to download straight to library.</p>
+          </div>
+        </section>
+
+        <!-- TAB: LIBRARY -->
+        <section id="view-library" class="hidden space-y-6 max-w-7xl mx-auto">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[var(--border-subtle)]">
+            <div>
+              <h1 class="text-2xl font-bold tracking-tight text-[var(--text-primary)]">Your Library</h1>
+              <p class="text-xs text-[var(--text-muted)] mt-0.5">Real indexed audio files on this device</p>
+            </div>
+            <!-- Library sub-filters & actions -->
+            <div class="flex items-center space-x-2">
+              <div class="flex items-center space-x-1.5 bg-[var(--bg-surface)] p-1 rounded-lg border border-[var(--border-subtle)] text-xs">
+                <button onclick="filterLibrary('all')" class="lib-tab-btn px-3 py-1 rounded-md font-medium text-[var(--accent)] bg-[var(--accent-dim)]" data-lib="all">All</button>
+                <button onclick="filterLibrary('favorites')" class="lib-tab-btn px-3 py-1 rounded-md font-medium text-[var(--text-muted)] hover:text-white" data-lib="favorites">Favorites</button>
+              </div>
+              <button onclick="rescanLibrary()" class="p-2 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xs font-medium" title="Rescan Music Folder">
+                ↻
+              </button>
+            </div>
+          </div>
+
+          <!-- Library Track Table -->
+          <div class="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead>
+                  <tr class="text-[var(--text-muted)] border-b border-[var(--border-subtle)] uppercase tracking-wider font-semibold">
+                    <th class="p-4 w-12 text-center">#</th>
+                    <th class="py-4 px-2">Title</th>
+                    <th class="py-4 px-2 hidden sm:table-cell">Album</th>
+                    <th class="py-4 px-2 hidden md:table-cell">Format</th>
+                    <th class="py-4 px-2 text-right pr-6">Time</th>
+                    <th class="py-4 pr-4 w-20 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="library-table-body" class="divide-y divide-[var(--border-subtle)]">
+                  <!-- Rendered dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB: QUEUE -->
+        <section id="view-queue" class="hidden space-y-6 max-w-4xl mx-auto">
+          <div class="flex items-center justify-between pb-2 border-b border-[var(--border-subtle)]">
+            <div>
+              <h1 class="text-2xl font-bold tracking-tight text-[var(--text-primary)]">Playback Queue</h1>
+              <p class="text-xs text-[var(--text-muted)] mt-0.5">Upcoming tracks</p>
+            </div>
+            <button onclick="clearQueue()" class="text-xs font-medium text-[var(--text-muted)] hover:text-red-400 transition">Clear</button>
+          </div>
+
+          <!-- Currently Playing Row -->
+          <div class="space-y-2">
+            <p class="text-xs font-mono uppercase tracking-wider text-[var(--accent)]">Now Playing</p>
+            <div id="queue-now-playing" class="p-3.5 rounded-xl bg-[var(--bg-surface-elevated)] border border-[var(--accent)] flex items-center justify-between">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- Next in Queue List -->
+          <div class="space-y-2">
+            <p class="text-xs font-mono uppercase tracking-wider text-[var(--text-muted)]">Next In Queue</p>
+            <div id="queue-list" class="space-y-2">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+    </main>
+
+    <!-- RIGHT SLIDE-OVER DRAWER: LYRICS -->
+    <aside id="lyrics-drawer" class="hidden fixed inset-y-0 right-0 w-full sm:w-96 bg-[var(--bg-surface)] border-l border-[var(--border-subtle)] z-40 flex-col shadow-2xl transition-all">
+      <div class="h-16 px-6 border-b border-[var(--border-subtle)] flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <span class="w-2 h-2 rounded-full bg-[var(--accent)]"></span>
+          <h2 class="font-bold text-sm tracking-tight text-[var(--text-primary)]">Synced Lyrics</h2>
+        </div>
+        <button onclick="toggleLyrics(false)" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 rounded">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="p-6 pb-2">
+        <p id="lyrics-track-title" class="font-bold text-base text-[var(--text-primary)] truncate">No song playing</p>
+        <p id="lyrics-track-artist" class="text-xs text-[var(--text-muted)] truncate"></p>
+      </div>
+
+      <div id="lyrics-scroll-container" class="flex-1 overflow-y-auto px-6 py-4 space-y-4 text-center">
+        <!-- Lyrics injected dynamically -->
+      </div>
+      
+      <div class="p-4 border-t border-[var(--border-subtle)] text-center text-[10px] text-[var(--text-muted)] font-mono">
+        Embedded metadata & LRCLIB synced provider
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- PERSISTENT BOTTOM PLAYER BAR (Spotify-inspired Polish, Full Width, AMOLED Clean) -->
+  <footer class="h-20 md:h-22 bg-[var(--bg-surface)] border-t border-[var(--border-subtle)] px-4 md:px-6 flex items-center justify-between shrink-0 z-30 select-none">
+    
+    <!-- LEFT: Currently Playing Info -->
+    <div class="flex items-center space-x-3 md:space-x-3.5 w-1/4 min-w-[140px] md:min-w-[200px]">
+      <div class="w-12 h-12 md:w-14 md:h-14 rounded-lg overflow-hidden bg-neutral-900 border border-[var(--border-subtle)] shrink-0 shadow-sm relative group cursor-pointer" onclick="openMobileNowPlaying()">
+        <img id="player-thumb" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100%25' height='100%25' fill='%23141414'/%3E%3Cpath d='M40 30v30.5c-1.5-.9-3.3-1.5-5.3-1.5-5.5 0-10 4.5-10 10s4.5 10 10 10 10-4.5 10-10V42h20v18.5c-1.5-.9-3.3-1.5-5.3-1.5-5.5 0-10 4.5-10 10s4.5 10 10 10 10-4.5 10-10V30H40z' fill='%2300f2fe' opacity='0.7'/%3E%3C/svg%3E" alt="Artwork" class="w-full h-full object-cover">
+        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+          <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+        </div>
+      </div>
+      <div class="min-w-0 flex-1">
+        <h4 id="player-title" class="font-semibold text-sm truncate text-[var(--text-primary)] hover:underline cursor-pointer" onclick="openMobileNowPlaying()">No song playing</h4>
+        <p id="player-artist" class="text-xs text-[var(--text-muted)] truncate hover:underline cursor-pointer">Select a track</p>
+      </div>
+      <button id="player-heart-btn" onclick="toggleFavoriteCurrent()" class="hidden sm:block text-[var(--text-muted)] hover:text-red-400 transition p-1" title="Save to Favorites">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+      </button>
+    </div>
+
+    <!-- CENTER: Transport Controls & Progress Scrub Bar -->
+    <div class="flex flex-col items-center justify-center flex-1 max-w-xl px-2">
+      <!-- Buttons -->
+      <div class="flex items-center space-x-4 md:space-x-6 mb-1 md:mb-1.5">
+        <button id="btn-shuffle" onclick="toggleShuffle()" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition p-1 hidden sm:block" title="Shuffle">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h2m8 0h2a2 2 0 012 2v2m0 6v2a2 2 0 01-2 2h-2M4 14l4 4m0 0l4-4m-4 4V8m16 2l-4-4m0 0l-4 4m4-4v10"/></svg>
+        </button>
+        <button onclick="prevTrack()" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition p-1" title="Previous">
+          <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+        </button>
+        <button id="btn-play" onclick="togglePlay()" class="w-9 h-9 md:w-10 md:h-10 rounded-full bg-[var(--text-primary)] text-black hover:scale-105 transition flex items-center justify-center shadow-lg" title="Play/Pause">
+          <svg id="icon-play" class="w-5 h-5 fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          <svg id="icon-pause" class="w-5 h-5 fill-current hidden" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+        </button>
+        <button onclick="nextTrack()" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition p-1" title="Next">
+          <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+        </button>
+        <button id="btn-repeat" onclick="toggleRepeat()" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition p-1 hidden sm:block" title="Repeat Mode">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        </button>
+      </div>
+
+      <!-- Scrubber -->
+      <div class="w-full flex items-center space-x-2.5 text-[11px] font-mono text-[var(--text-muted)] slider-container">
+        <span id="player-current-time">0:00</span>
+        <div class="relative flex-1 flex items-center">
+          <input 
+            type="range" 
+            id="player-scrub" 
+            min="0" 
+            max="100" 
+            value="0" 
+            oninput="handleScrubInput(this.value)"
+            class="w-full h-1"
+          >
+        </div>
+        <span id="player-total-time">0:00</span>
+      </div>
+    </div>
+
+    <!-- RIGHT: Controls -->
+    <div class="flex items-center justify-end space-x-2 md:space-x-3 w-1/4">
+      <button onclick="toggleLyrics()" id="btn-lyrics" class="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-elevated)] transition" title="Toggle Lyrics">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
+      </button>
+
+      <button onclick="switchTab('queue')" class="hidden sm:block p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-elevated)] transition" title="View Queue">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/></svg>
+      </button>
+
+      <button onclick="exportCurrentTrack()" class="p-1.5 rounded-lg text-[var(--accent)] hover:bg-[var(--accent-dim)] transition" title="Export / Download Active Track">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+      </button>
+
+      <!-- Volume Slider (Desktop) -->
+      <div class="hidden md:flex items-center space-x-2 slider-container w-28">
+        <button onclick="toggleMute()" id="btn-volume" class="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
+        </button>
+        <input 
+          type="range" 
+          id="player-volume" 
+          min="0" 
+          max="100" 
+          value="80" 
+          oninput="handleVolumeInput(this.value)"
+          class="w-full h-1"
+        >
+      </div>
+    </div>
+  </footer>
+
+  <!-- MOBILE BOTTOM NAVIGATION -->
+  <nav class="md:hidden h-14 bg-[var(--bg-base)] border-t border-[var(--border-subtle)] px-6 flex items-center justify-around z-30 pb-safe">
+    <button id="mob-nav-home" onclick="switchTab('home')" class="flex flex-col items-center justify-center space-y-0.5 text-[var(--accent)]">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+      <span class="text-[10px] font-medium">Home</span>
+    </button>
+    <button id="mob-nav-search" onclick="switchTab('search')" class="flex flex-col items-center justify-center space-y-0.5 text-[var(--text-muted)]">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+      <span class="text-[10px] font-medium">Search</span>
+    </button>
+    <button id="mob-nav-library" onclick="switchTab('library')" class="flex flex-col items-center justify-center space-y-0.5 text-[var(--text-muted)]">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+      <span class="text-[10px] font-medium">Library</span>
+    </button>
+    <button id="mob-nav-queue" onclick="switchTab('queue')" class="flex flex-col items-center justify-center space-y-0.5 text-[var(--text-muted)]">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/></svg>
+      <span class="text-[10px] font-medium">Queue</span>
+    </button>
+  </nav>
+
+  <!-- MOBILE FULLSCREEN NOW PLAYING SHEET -->
+  <div id="mobile-now-playing-sheet" class="hidden fixed inset-0 bg-[var(--bg-base)] z-50 flex-col p-6 pb-safe transition-all">
+    <div class="flex items-center justify-between pb-4">
+      <button onclick="closeMobileNowPlaying()" class="p-2 text-[var(--text-muted)] hover:text-white">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div class="text-center">
+        <p class="text-[10px] uppercase font-mono tracking-widest text-[var(--text-muted)]">Playing From Library</p>
+        <p id="mob-sheet-album-subtitle" class="text-xs font-semibold text-[var(--text-primary)]">ZoinK Player</p>
+      </div>
+      <button onclick="exportCurrentTrack()" class="p-2 text-[var(--accent)]">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+      </button>
+    </div>
+
+    <!-- Centered Large Artwork -->
+    <div class="flex-1 flex items-center justify-center my-4">
+      <div class="w-64 h-64 sm:w-72 sm:h-72 rounded-2xl overflow-hidden shadow-2xl border border-[var(--border-subtle)] bg-neutral-950">
+        <img id="mob-sheet-thumb" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100%25' height='100%25' fill='%23141414'/%3E%3Cpath d='M40 30v30.5c-1.5-.9-3.3-1.5-5.3-1.5-5.5 0-10 4.5-10 10s4.5 10 10 10 10-4.5 10-10V42h20v18.5c-1.5-.9-3.3-1.5-5.3-1.5-5.5 0-10 4.5-10 10s4.5 10 10 10 10-4.5 10-10V30H40z' fill='%2300f2fe' opacity='0.7'/%3E%3C/svg%3E" alt="Artwork" class="w-full h-full object-cover">
+      </div>
+    </div>
+
+    <!-- Title & Artist -->
+    <div class="flex items-center justify-between my-2">
+      <div class="min-w-0 flex-1 mr-4">
+        <h2 id="mob-sheet-title" class="text-xl font-bold tracking-tight text-[var(--text-primary)] truncate">No song playing</h2>
+        <p id="mob-sheet-artist" class="text-sm text-[var(--text-muted)] truncate mt-0.5">Select from library</p>
+      </div>
+      <button id="mob-sheet-heart-btn" onclick="toggleFavoriteCurrent()" class="p-2 text-[var(--text-muted)] hover:text-red-400">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+      </button>
+    </div>
+
+    <!-- Scrubber -->
+    <div class="my-4 slider-container">
+      <input 
+        type="range" 
+        id="mob-sheet-scrub" 
+        min="0" 
+        max="100" 
+        value="0" 
+        oninput="handleScrubInput(this.value)"
+        class="w-full h-1.5"
+      >
+      <div class="flex justify-between text-xs font-mono text-[var(--text-muted)] mt-2">
+        <span id="mob-sheet-current-time">0:00</span>
+        <span id="mob-sheet-total-time">0:00</span>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="flex items-center justify-between my-4 px-2">
+      <button onclick="toggleShuffle()" class="text-[var(--text-muted)] hover:text-white p-2">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h2m8 0h2a2 2 0 012 2v2m0 6v2a2 2 0 01-2 2h-2M4 14l4 4m0 0l4-4m-4 4V8m16 2l-4-4m0 0l-4 4m4-4v10"/></svg>
+      </button>
+      <button onclick="prevTrack()" class="text-white p-2">
+        <svg class="w-7 h-7 fill-current" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+      </button>
+      <button onclick="togglePlay()" class="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center shadow-2xl">
+        <svg id="mob-sheet-play-icon" class="w-7 h-7 fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        <svg id="mob-sheet-pause-icon" class="w-7 h-7 fill-current hidden" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+      </button>
+      <button onclick="nextTrack()" class="text-white p-2">
+        <svg class="w-7 h-7 fill-current" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+      </button>
+      <button onclick="toggleRepeat()" class="text-[var(--text-muted)] hover:text-white p-2">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+      </button>
+    </div>
+
+    <!-- Bottom Actions -->
+    <div class="flex items-center justify-between pt-4 border-t border-[var(--border-subtle)] text-xs">
+      <button onclick="toggleLyrics(); closeMobileNowPlaying()" class="flex items-center space-x-2 text-[var(--accent)] font-medium">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
+        <span>View Lyrics</span>
+      </button>
+      <span class="text-[var(--text-muted)] font-mono text-[11px]" id="mob-output-format">Lossless Stream</span>
+    </div>
+  </div>
+
+  <!-- THEMES & PREFERENCES MODAL -->
+  <div id="settings-modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-bold text-[var(--text-primary)]">Settings & Engine</h3>
+          <p class="text-xs text-[var(--text-muted)]">Appearance & Audio Verification</p>
+        </div>
+        <button onclick="closeSettingsModal()" class="text-[var(--text-muted)] hover:text-white p-1">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="space-y-3">
+        <label class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Colorway</label>
+        <div class="grid grid-cols-2 gap-2.5">
+          <button onclick="setTheme('amoled')" class="p-3 rounded-xl border border-[var(--accent)] bg-black text-left flex items-center space-x-3 transition">
+            <span class="w-4 h-4 rounded-full bg-[#00f2fe]"></span>
+            <div>
+              <p class="font-semibold text-xs text-white">Pure AMOLED</p>
+              <p class="text-[10px] text-neutral-400">Pitch Black</p>
+            </div>
+          </button>
+          <button onclick="setTheme('midnight')" class="p-3 rounded-xl border border-[var(--border-subtle)] bg-[#06080d] text-left flex items-center space-x-3 hover:border-[var(--border-hover)] transition">
+            <span class="w-4 h-4 rounded-full bg-[#38bdf8]"></span>
+            <div>
+              <p class="font-semibold text-xs text-white">Midnight</p>
+              <p class="text-[10px] text-neutral-400">Deep Blue</p>
+            </div>
+          </button>
+          <button onclick="setTheme('eclipse')" class="p-3 rounded-xl border border-[var(--border-subtle)] bg-[#08090a] text-left flex items-center space-x-3 hover:border-[var(--border-hover)] transition">
+            <span class="w-4 h-4 rounded-full bg-[#10b981]"></span>
+            <div>
+              <p class="font-semibold text-xs text-white">Eclipse</p>
+              <p class="text-[10px] text-neutral-400">Emerald</p>
+            </div>
+          </button>
+          <button onclick="setTheme('tokyo')" class="p-3 rounded-xl border border-[var(--border-subtle)] bg-[#050509] text-left flex items-center space-x-3 hover:border-[var(--border-hover)] transition">
+            <span class="w-4 h-4 rounded-full bg-[#a855f7]"></span>
+            <div>
+              <p class="font-semibold text-xs text-white">Tokyo</p>
+              <p class="text-[10px] text-neutral-400">Violet</p>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <div class="pt-2 border-t border-[var(--border-subtle)] space-y-2 text-xs">
+        <div class="flex justify-between text-[var(--text-muted)]">
+          <span>Playback Engine:</span>
+          <span class="font-mono text-[var(--text-primary)]">HTML5 Audio + FFmpeg Pipe</span>
+        </div>
+        <div class="flex justify-between text-[var(--text-muted)]">
+          <span>Supported Formats:</span>
+          <span class="font-mono text-[var(--text-primary)]">Opus, FLAC, MP3, M4A, OGG, WAV</span>
+        </div>
+        <div class="flex justify-between text-[var(--text-muted)]">
+          <span>Watermark:</span>
+          <span class="font-mono text-[var(--accent)]">: made by Ritam/Trixx</span>
+        </div>
+      </div>
+
+      <button onclick="closeSettingsModal()" class="w-full py-2.5 rounded-xl bg-[var(--bg-surface-elevated)] hover:bg-[var(--bg-surface-hover)] text-xs font-semibold text-[var(--text-primary)] transition">
+        Done
+      </button>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toast" class="hidden fixed bottom-24 md:bottom-28 right-6 bg-[var(--bg-surface-elevated)] border border-[var(--accent)] text-[var(--text-primary)] px-4 py-2.5 rounded-xl shadow-2xl flex items-center space-x-2.5 z-50 text-xs font-medium fade-enter-active">
+    <span class="text-[var(--accent)] font-bold">✓</span>
+    <span id="toast-message">Ready</span>
+  </div>
+
+  <!-- JAVASCRIPT: APPLICATION LOGIC & REAL AUDIO ENGINE -->
+  <script>
+    const DEFAULT_ART = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100%25' height='100%25' fill='%23141414'/%3E%3Cpath d='M40 30v30.5c-1.5-.9-3.3-1.5-5.3-1.5-5.5 0-10 4.5-10 10s4.5 10 10 10 10-4.5 10-10V42h20v18.5c-1.5-.9-3.3-1.5-5.3-1.5-5.5 0-10 4.5-10 10s4.5 10 10 10 10-4.5 10-10V30H40z' fill='%2300f2fe' opacity='0.7'/%3E%3C/svg%3E";
+
+    // Application state (100% real data from server)
+    let state = {
+      activeTab: "home",
+      tracks: [],
+      albums: [],
+      recent: [],
+      queue: [],
+      currentTrackIndex: -1,
+      isPlaying: false,
+      currentTime: 0,
+      duration: 0,
+      volume: 80,
+      isMuted: false,
+      isShuffle: false,
+      repeatMode: "off",
+      favorites: new Set(JSON.parse(localStorage.getItem("zoink_favorites") || "[]")),
+      searchQuery: "",
+      searchFilter: "all",
+      libFilter: "all",
+      isLyricsOpen: false,
+      lyricsList: [],
+      isTranscodeFallback: false
+    };
+
+    const audio = document.getElementById("audio-player");
+
+    // Native Audio Engine Listeners
+    audio.addEventListener("timeupdate", () => {
+      state.currentTime = audio.currentTime;
+      if (!isNaN(audio.duration) && audio.duration > 0) {
+        state.duration = audio.duration;
+      }
+      updateProgressUI();
+      updateLyricsHighlight();
+    });
+
+    audio.addEventListener("loadedmetadata", () => {
+      if (!isNaN(audio.duration) && audio.duration > 0) {
+        state.duration = audio.duration;
+      }
+      updateProgressUI();
+    });
+
+    audio.addEventListener("play", () => {
+      state.isPlaying = true;
+      updatePlayButtonUI();
+    });
+
+    audio.addEventListener("pause", () => {
+      state.isPlaying = false;
+      updatePlayButtonUI();
+    });
+
+    audio.addEventListener("ended", () => {
+      handleTrackEnded();
+    });
+
+    audio.addEventListener("error", () => {
+      console.warn("Native audio error:", audio.error);
+      const cur = getCurrentTrack();
+      if (!cur) return;
+      if (!state.isTranscodeFallback) {
+        state.isTranscodeFallback = true;
+        console.log("Retrying with universal MP3 stream for:", cur.title);
+        const resumeSec = state.currentTime || 0;
+        audio.src = `/api/stream/${encodeURIComponent(cur.id)}?transcode=mp3`;
+        audio.load();
+        audio.currentTime = resumeSec;
+        audio.play().catch(e => console.error("Transcode stream play failed:", e));
+        showToast(`Streaming ${cur.title} (Universal MP3)`);
+      } else {
+        showToast(`Playback error for "${cur.title}"`);
+      }
+    });
+
+    function getCurrentTrack() {
+      if (state.currentTrackIndex >= 0 && state.currentTrackIndex < state.queue.length) {
+        return state.queue[state.currentTrackIndex];
+      }
+      return null;
+    }
+
+    function getFormatBadge(t) {
+      if (t && t.filepath) {
+        const ext = t.filepath.split('.').pop().toUpperCase();
+        if (ext) return ext;
+      }
+      return "AUDIO";
+    }
+
+    function formatTime(secs) {
+      if (isNaN(secs) || secs < 0) return "0:00";
+      const m = Math.floor(secs / 60);
+      const s = Math.floor(secs % 60);
+      return `${m}:${s < 10 ? '0' : ''}${s}`;
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // Playback Controller
+    function playTrackById(id) {
+      let idx = state.queue.findIndex(t => t.id === id);
+      if (idx === -1) {
+        const found = state.tracks.find(t => t.id === id);
+        if (found) {
+          state.queue.unshift(found);
+          idx = 0;
+        }
+      }
+      if (idx !== -1) {
+        playTrackAtIndex(idx);
+      }
+    }
+
+    function playTrackAtIndex(idx) {
+      if (idx < 0 || idx >= state.queue.length) return;
+      state.currentTrackIndex = idx;
+      const track = state.queue[idx];
+      state.currentTime = 0;
+      state.duration = track.duration || 0;
+      state.isTranscodeFallback = false;
+
+      audio.src = `/api/stream/${encodeURIComponent(track.id)}`;
+      audio.load();
+      audio.play().then(() => {
+        state.isPlaying = true;
+        updatePlayerUI();
+      }).catch(err => {
+        console.warn("audio.play() caught:", err);
+        updatePlayerUI();
+      });
+
+      updatePlayerUI();
+      fetchLyricsForTrack(track.id);
+      showToast(`Playing "${track.title}"`);
+      updateMediaSession(track);
+    }
+
+    function togglePlay() {
+      const cur = getCurrentTrack();
+      if (!cur) {
+        if (state.queue.length > 0) {
+          playTrackAtIndex(0);
+        } else if (state.tracks.length > 0) {
+          state.queue = [...state.tracks];
+          playTrackAtIndex(0);
+        }
+        return;
+      }
+
+      if (audio.paused) {
+        audio.play().then(() => {
+          state.isPlaying = true;
+          updatePlayButtonUI();
+        }).catch(err => console.warn("togglePlay error:", err));
+      } else {
+        audio.pause();
+        state.isPlaying = false;
+        updatePlayButtonUI();
+      }
+    }
+
+    function nextTrack() {
+      if (state.queue.length === 0) return;
+      if (state.isShuffle) {
+        const nextIdx = Math.floor(Math.random() * state.queue.length);
+        playTrackAtIndex(nextIdx);
+      } else {
+        const nextIdx = (state.currentTrackIndex + 1) % state.queue.length;
+        playTrackAtIndex(nextIdx);
+      }
+    }
+
+    function prevTrack() {
+      if (state.queue.length === 0) return;
+      if (audio.currentTime > 3) {
+        audio.currentTime = 0;
+        return;
+      }
+      const prevIdx = (state.currentTrackIndex - 1 + state.queue.length) % state.queue.length;
+      playTrackAtIndex(prevIdx);
+    }
+
+    function handleTrackEnded() {
+      if (state.repeatMode === "one") {
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+      } else if (state.repeatMode === "all" || state.currentTrackIndex + 1 < state.queue.length) {
+        nextTrack();
+      } else {
+        state.isPlaying = false;
+        updatePlayButtonUI();
+      }
+    }
+
+    function toggleShuffle() {
+      state.isShuffle = !state.isShuffle;
+      const btn = document.getElementById("btn-shuffle");
+      btn.classList.toggle("text-[var(--accent)]", state.isShuffle);
+      showToast(state.isShuffle ? "Shuffle enabled" : "Shuffle disabled");
+    }
+
+    function toggleRepeat() {
+      const btn = document.getElementById("btn-repeat");
+      if (state.repeatMode === "off") {
+        state.repeatMode = "all";
+        btn.classList.add("text-[var(--accent)]");
+        btn.setAttribute("title", "Repeat all");
+        showToast("Repeat all");
+      } else if (state.repeatMode === "all") {
+        state.repeatMode = "one";
+        btn.classList.add("text-[var(--accent)]");
+        btn.setAttribute("title", "Repeat one");
+        showToast("Repeat single track");
+      } else {
+        state.repeatMode = "off";
+        btn.classList.remove("text-[var(--accent)]");
+        btn.setAttribute("title", "Repeat mode");
+        showToast("Repeat off");
+      }
+    }
+
+    function handleScrubInput(val) {
+      const total = audio.duration || state.duration || 0;
+      if (total > 0) {
+        const target = (parseFloat(val) / 100) * total;
+        audio.currentTime = target;
+        state.currentTime = target;
+        updateProgressUI();
+        updateLyricsHighlight();
+      }
+    }
+
+    function handleVolumeInput(val) {
+      state.volume = parseInt(val);
+      audio.volume = state.volume / 100;
+      state.isMuted = state.volume === 0;
+      audio.muted = state.isMuted;
+      updateVolumeUI();
+    }
+
+    function toggleMute() {
+      state.isMuted = !state.isMuted;
+      audio.muted = state.isMuted;
+      updateVolumeUI();
+    }
+
+    function updateVolumeUI() {
+      const volSlider = document.getElementById("player-volume");
+      const volBtn = document.getElementById("btn-volume");
+      volSlider.value = state.isMuted ? 0 : state.volume;
+      if (state.isMuted || state.volume === 0) {
+        volBtn.innerHTML = `<svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/></svg>`;
+      } else {
+        volBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>`;
+      }
+    }
+
+    function updateProgressUI() {
+      const total = audio.duration || state.duration || 0;
+      const cur = audio.currentTime || state.currentTime || 0;
+      const pct = total > 0 ? (cur / total) * 100 : 0;
+      const strCur = formatTime(cur);
+      const strTot = formatTime(total);
+
+      document.getElementById("player-scrub").value = pct;
+      document.getElementById("player-current-time").innerText = strCur;
+      document.getElementById("player-total-time").innerText = strTot;
+
+      document.getElementById("mob-sheet-scrub").value = pct;
+      document.getElementById("mob-sheet-current-time").innerText = strCur;
+      document.getElementById("mob-sheet-total-time").innerText = strTot;
+    }
+
+    function updatePlayerUI() {
+      const cur = getCurrentTrack();
+      const thumb = document.getElementById("player-thumb");
+      const title = document.getElementById("player-title");
+      const artist = document.getElementById("player-artist");
+      const mobThumb = document.getElementById("mob-sheet-thumb");
+      const mobTitle = document.getElementById("mob-sheet-title");
+      const mobArtist = document.getElementById("mob-sheet-artist");
+      const mobSub = document.getElementById("mob-sheet-album-subtitle");
+      const mobFmt = document.getElementById("mob-output-format");
+
+      if (!cur) {
+        title.innerText = "No song playing";
+        artist.innerText = "Select a track from library";
+        thumb.src = DEFAULT_ART;
+        mobTitle.innerText = "No track selected";
+        mobArtist.innerText = "Select from library";
+        mobThumb.src = DEFAULT_ART;
+        mobSub.innerText = "ZoinK Player";
+        mobFmt.innerText = "Direct Audio";
+      } else {
+        const artUrl = `/api/artwork/${encodeURIComponent(cur.id)}`;
+        title.innerText = cur.title;
+        artist.innerText = cur.artist || "Unknown Artist";
+        thumb.src = artUrl;
+        thumb.onerror = () => { thumb.onerror = null; thumb.src = DEFAULT_ART; };
+
+        mobTitle.innerText = cur.title;
+        mobArtist.innerText = cur.artist || "Unknown Artist";
+        mobThumb.src = artUrl;
+        mobThumb.onerror = () => { mobThumb.onerror = null; mobThumb.src = DEFAULT_ART; };
+        mobSub.innerText = cur.album || "Library Track";
+        mobFmt.innerText = `${getFormatBadge(cur)} · Bit-perfect`;
+      }
+
+      updatePlayButtonUI();
+      updateFavoriteButtons();
+      updateProgressUI();
+      renderQueueTab();
+    }
+
+    function updatePlayButtonUI() {
+      const playIcon = document.getElementById("icon-play");
+      const pauseIcon = document.getElementById("icon-pause");
+      const mobPlayIcon = document.getElementById("mob-sheet-play-icon");
+      const mobPauseIcon = document.getElementById("mob-sheet-pause-icon");
+
+      if (state.isPlaying) {
+        playIcon.classList.add("hidden");
+        pauseIcon.classList.remove("hidden");
+        mobPlayIcon.classList.add("hidden");
+        mobPauseIcon.classList.remove("hidden");
+      } else {
+        playIcon.classList.remove("hidden");
+        pauseIcon.classList.add("hidden");
+        mobPlayIcon.classList.remove("hidden");
+        mobPauseIcon.classList.add("hidden");
+      }
+    }
+
+    function toggleFavorite(trackId) {
+      if (state.favorites.has(trackId)) {
+        state.favorites.delete(trackId);
+        showToast("Removed from favorites");
+      } else {
+        state.favorites.add(trackId);
+        showToast("Saved to favorites");
+      }
+      localStorage.setItem("zoink_favorites", JSON.stringify([...state.favorites]));
+      updateFavoriteButtons();
+      renderLibraryTable();
+    }
+
+    function toggleFavoriteCurrent() {
+      const cur = getCurrentTrack();
+      if (cur) toggleFavorite(cur.id);
+    }
+
+    function updateFavoriteButtons() {
+      const cur = getCurrentTrack();
+      const deskBtn = document.getElementById("player-heart-btn");
+      const mobBtn = document.getElementById("mob-sheet-heart-btn");
+      if (!cur) return;
+      const isFav = state.favorites.has(cur.id);
+      if (isFav) {
+        deskBtn.classList.add("text-red-500");
+        deskBtn.innerHTML = `<svg class="w-4 h-4 fill-current text-red-500" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`;
+        mobBtn.innerHTML = `<svg class="w-6 h-6 fill-current text-red-500" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`;
+      } else {
+        deskBtn.classList.remove("text-red-500");
+        deskBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>`;
+        mobBtn.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>`;
+      }
+    }
+
+    function exportCurrentTrack() {
+      const cur = getCurrentTrack();
+      if (!cur) {
+        showToast("No active track to export");
+        return;
+      }
+      window.location.href = `/api/file/${encodeURIComponent(cur.id)}`;
+    }
+
+    // MediaSession Metadata
+    function updateMediaSession(track) {
+      if ('mediaSession' in navigator && track) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: track.title,
+          artist: track.artist || 'Unknown Artist',
+          album: track.album || '',
+          artwork: [
+            { src: `/api/artwork/${encodeURIComponent(track.id)}`, sizes: '512x512', type: 'image/jpeg' }
+          ]
+        });
+        navigator.mediaSession.setActionHandler('play', () => togglePlay());
+        navigator.mediaSession.setActionHandler('pause', () => togglePlay());
+        navigator.mediaSession.setActionHandler('previoustrack', () => prevTrack());
+        navigator.mediaSession.setActionHandler('nexttrack', () => nextTrack());
+      }
+    }
+
+    // Real Data Fetcher
+    async function loadLibraryData() {
+      try {
+        const [resTracks, resAlbums, resRecent] = await Promise.all([
+          fetch("/api/tracks").then(r => r.ok ? r.json() : []),
+          fetch("/api/albums").then(r => r.ok ? r.json() : []),
+          fetch("/api/recent").then(r => r.ok ? r.json() : [])
+        ]);
+
+        state.tracks = Array.isArray(resTracks) ? resTracks : [];
+        state.albums = Array.isArray(resAlbums) ? resAlbums : [];
+        state.recent = Array.isArray(resRecent) ? resRecent : [];
+
+        document.getElementById("lib-count-status").innerText = `${state.tracks.length} tracks indexed`;
+
+        if (state.queue.length === 0 && state.tracks.length > 0) {
+          state.queue = [...state.tracks];
+        }
+
+        if (state.tracks.length > 0 && state.currentTrackIndex === -1) {
+          state.currentTrackIndex = 0;
+          const initial = state.tracks[0];
+          state.duration = initial.duration || 0;
+          audio.src = `/api/stream/${encodeURIComponent(initial.id)}`;
+          audio.load();
+        }
+
+        renderHomeTab();
+        renderLibraryTable();
+        renderQueueTab();
+        updatePlayerUI();
+      } catch (err) {
+        console.error("Failed to load library data:", err);
+      }
+    }
+
+    // View Renderers
+    function renderHomeTab() {
+      const hour = new Date().getHours();
+      const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+      document.getElementById("greeting-text").innerText = `${greeting}, Music Lover`;
+
+      const emptyState = document.getElementById("home-empty-state");
+      const quickSection = document.getElementById("quick-jump-section");
+      const albumsSection = document.getElementById("featured-albums-section");
+      const tracksSection = document.getElementById("popular-tracks-section");
+
+      if (state.tracks.length === 0) {
+        emptyState.classList.remove("hidden");
+        quickSection.classList.add("hidden");
+        albumsSection.classList.add("hidden");
+        tracksSection.classList.add("hidden");
+        return;
+      }
+
+      emptyState.classList.add("hidden");
+      quickSection.classList.remove("hidden");
+      tracksSection.classList.remove("hidden");
+
+      // Quick jump cards from recent tracks
+      const quickTracks = state.recent.length > 0 ? state.recent.slice(0, 6) : state.tracks.slice(0, 6);
+      const quickGrid = document.getElementById("quick-jump-grid");
+      const cur = getCurrentTrack();
+
+      quickGrid.innerHTML = quickTracks.map(t => {
+        const artUrl = `/api/artwork/${encodeURIComponent(t.id)}`;
+        const isCur = cur && cur.id === t.id;
+        return `
+          <div onclick="playTrackById('${escapeHtml(t.id)}')" class="group p-3 rounded-xl bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] flex items-center space-x-3.5 cursor-pointer transition ${isCur ? 'border-[var(--accent)] bg-[var(--accent-dim)]/20' : ''}">
+            <div class="w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-neutral-900 relative shadow-sm">
+              <img src="${artUrl}" onerror="this.onerror=null;this.src=DEFAULT_ART" alt="${escapeHtml(t.title)}" class="w-full h-full object-cover">
+              <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                <span class="text-white text-xs">${isCur && state.isPlaying ? '❚❚' : '▶'}</span>
+              </div>
+            </div>
+            <div class="flex-1 min-w-0">
+              <h3 class="font-semibold text-sm truncate text-[var(--text-primary)] group-hover:text-[var(--accent)] transition">${escapeHtml(t.title)}</h3>
+              <p class="text-xs text-[var(--text-muted)] truncate">${escapeHtml(t.artist || 'Unknown Artist')}</p>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      // Real Albums Grid (Only rendered if actual albums exist)
+      if (state.albums.length > 0) {
+        albumsSection.classList.remove("hidden");
+        const albumGrid = document.getElementById("featured-albums-grid");
+        albumGrid.innerHTML = state.albums.map(alb => {
+          const coverId = alb.cover_track_id ? encodeURIComponent(alb.cover_track_id) : "";
+          const artUrl = coverId ? `/api/artwork/${coverId}` : DEFAULT_ART;
+          return `
+            <div class="group p-3 rounded-xl bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] hover:border-[var(--border-hover)] cursor-pointer transition flex flex-col space-y-3" onclick="filterByAlbum('${escapeHtml(alb.album)}')">
+              <div class="w-full aspect-square rounded-lg overflow-hidden bg-neutral-900 relative shadow-md">
+                <img src="${artUrl}" onerror="this.onerror=null;this.src=DEFAULT_ART" alt="${escapeHtml(alb.album)}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
+                <button class="absolute bottom-2 right-2 w-9 h-9 rounded-full bg-[var(--accent)] text-black flex items-center justify-center opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition duration-200 shadow-xl">
+                  ▶
+                </button>
+              </div>
+              <div class="min-w-0">
+                <h4 class="font-bold text-xs truncate text-[var(--text-primary)] group-hover:text-[var(--accent)] transition">${escapeHtml(alb.album)}</h4>
+                <p class="text-[11px] text-[var(--text-muted)] truncate mt-0.5">${escapeHtml(alb.artist || 'Various')} · ${alb.track_count} tracks</p>
+              </div>
+            </div>
+          `;
+        }).join("");
+      } else {
+        albumsSection.classList.add("hidden");
+      }
+
+      // Popular tracks list (real songs from library)
+      const popList = document.getElementById("popular-tracks-list");
+      const displayTracks = state.tracks.slice(0, 10);
+      popList.innerHTML = displayTracks.map((t, i) => {
+        const artUrl = `/api/artwork/${encodeURIComponent(t.id)}`;
+        const isCur = cur && cur.id === t.id;
+        const fmt = getFormatBadge(t);
+        return `
+          <div class="p-3 hover:bg-[var(--bg-surface-elevated)] flex items-center justify-between transition cursor-pointer group ${isCur ? 'bg-[var(--accent-dim)]/20' : ''}" onclick="playTrackById('${escapeHtml(t.id)}')">
+            <div class="flex items-center space-x-3.5 min-w-0 flex-1">
+              <span class="text-xs font-mono text-[var(--text-muted)] w-5 text-center group-hover:text-[var(--accent)]">
+                ${isCur && state.isPlaying ? '<span class="text-[var(--accent)]">▶</span>' : (i + 1)}
+              </span>
+              <img src="${artUrl}" onerror="this.onerror=null;this.src=DEFAULT_ART" class="w-10 h-10 rounded-lg object-cover shrink-0">
+              <div class="min-w-0 flex-1">
+                <h4 class="font-semibold text-xs truncate text-[var(--text-primary)] group-hover:text-[var(--accent)] transition">${escapeHtml(t.title)}</h4>
+                <p class="text-[11px] text-[var(--text-muted)] truncate">${escapeHtml(t.artist || 'Unknown Artist')} ${t.album ? '· ' + escapeHtml(t.album) : ''}</p>
+              </div>
+            </div>
+            <div class="flex items-center space-x-3 shrink-0 ml-2">
+              <span class="text-[10px] font-mono text-[var(--text-muted)] px-1.5 py-0.5 rounded bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] hidden sm:inline-block">${fmt}</span>
+              <span class="text-xs font-mono text-[var(--text-muted)] hidden sm:block">${formatTime(t.duration)}</span>
+              <a href="/api/file/${encodeURIComponent(t.id)}" download onclick="event.stopPropagation()" class="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--bg-surface)] transition" title="Export File">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+              </a>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderLibraryTable() {
+      const tbody = document.getElementById("library-table-body");
+      let list = [...state.tracks];
+
+      if (state.libFilter === 'favorites') {
+        list = list.filter(t => state.favorites.has(t.id));
+      }
+
+      if (list.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" class="p-10 text-center text-[var(--text-muted)]">
+              <div class="space-y-1">
+                <p class="text-sm font-semibold text-[var(--text-primary)]">No tracks available</p>
+                <p class="text-xs">No songs found in this view. Use Search or Zoink URL to add tracks.</p>
+              </div>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      const cur = getCurrentTrack();
+      tbody.innerHTML = list.map((t, idx) => {
+        const isCurrent = cur && cur.id === t.id;
+        const isFav = state.favorites.has(t.id);
+        const artUrl = `/api/artwork/${encodeURIComponent(t.id)}`;
+        const fmt = getFormatBadge(t);
+
+        return `
+          <tr class="hover:bg-[var(--bg-surface-elevated)] transition group cursor-pointer ${isCurrent ? 'bg-[var(--accent-dim)]/30' : ''}">
+            <td class="p-4 text-center font-mono text-[var(--text-muted)]" onclick="playTrackById('${escapeHtml(t.id)}')">
+              ${isCurrent && state.isPlaying ? '<span class="text-[var(--accent)] font-bold">▶</span>' : (idx + 1)}
+            </td>
+            <td class="py-3 px-2" onclick="playTrackById('${escapeHtml(t.id)}')">
+              <div class="flex items-center space-x-3 min-w-0">
+                <img src="${artUrl}" onerror="this.onerror=null;this.src=DEFAULT_ART" class="w-9 h-9 rounded object-cover shrink-0">
+                <div class="min-w-0">
+                  <p class="font-semibold text-xs truncate ${isCurrent ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}">${escapeHtml(t.title)}</p>
+                  <p class="text-[11px] text-[var(--text-muted)] truncate">${escapeHtml(t.artist || 'Unknown Artist')}</p>
+                </div>
+              </div>
+            </td>
+            <td class="py-3 px-2 hidden sm:table-cell text-[var(--text-muted)] truncate max-w-xs" onclick="playTrackById('${escapeHtml(t.id)}')">${escapeHtml(t.album || '—')}</td>
+            <td class="py-3 px-2 hidden md:table-cell font-mono text-[11px] text-[var(--text-muted)]">
+              <span class="text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/40">${fmt}</span>
+            </td>
+            <td class="py-3 px-2 text-right pr-6 font-mono text-[var(--text-muted)]" onclick="playTrackById('${escapeHtml(t.id)}')">${formatTime(t.duration)}</td>
+            <td class="py-3 pr-4 text-center">
+              <div class="flex items-center justify-center space-x-1">
+                <button onclick="event.stopPropagation(); toggleFavorite('${escapeHtml(t.id)}')" class="p-1.5 rounded text-[var(--text-muted)] hover:text-red-400 transition" title="Favorite">
+                  <svg class="w-4 h-4 ${isFav ? 'text-red-500 fill-current' : ''}" fill="${isFav ? 'currentColor' : 'none'}" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+                </button>
+                <a href="/api/file/${encodeURIComponent(t.id)}" download onclick="event.stopPropagation()" class="p-1.5 rounded hover:text-[var(--accent)] text-[var(--text-muted)] transition" title="Direct File Export">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                </a>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function renderQueueTab() {
+      const cur = getCurrentTrack();
+      const npContainer = document.getElementById("queue-now-playing");
+      const listContainer = document.getElementById("queue-list");
+      const badge = document.getElementById("queue-badge");
+
+      badge.innerText = state.queue.length;
+
+      if (!cur) {
+        npContainer.innerHTML = `
+          <div class="p-4 text-center text-xs text-[var(--text-muted)] w-full">
+            No track currently active. Click any song to play.
+          </div>
+        `;
+        listContainer.innerHTML = `<div class="p-6 text-center text-xs text-[var(--text-muted)]">Queue is empty</div>`;
+        return;
+      }
+
+      const artUrl = `/api/artwork/${encodeURIComponent(cur.id)}`;
+      npContainer.innerHTML = `
+        <div class="flex items-center space-x-3.5 min-w-0 flex-1">
+          <img src="${artUrl}" onerror="this.onerror=null;this.src=DEFAULT_ART" class="w-12 h-12 rounded-lg object-cover shrink-0">
+          <div class="min-w-0 flex-1">
+            <h4 class="font-bold text-sm text-[var(--accent)] truncate">${escapeHtml(cur.title)}</h4>
+            <p class="text-xs text-[var(--text-muted)] truncate">${escapeHtml(cur.artist || 'Unknown Artist')} ${cur.album ? '· ' + escapeHtml(cur.album) : ''}</p>
+          </div>
+        </div>
+        <div class="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-[var(--accent-dim)] text-[var(--accent)] text-xs font-mono shrink-0">
+          <span>${state.isPlaying ? 'Playing' : 'Paused'}</span>
+        </div>
+      `;
+
+      const upcoming = state.queue.slice(state.currentTrackIndex + 1);
+      if (upcoming.length === 0) {
+        listContainer.innerHTML = `
+          <div class="p-4 text-center text-xs text-[var(--text-muted)] bg-[var(--bg-surface)] rounded-xl border border-[var(--border-subtle)]">
+            End of queue reached.
+          </div>
+        `;
+        return;
+      }
+
+      listContainer.innerHTML = upcoming.map((t, idx) => {
+        const art = `/api/artwork/${encodeURIComponent(t.id)}`;
+        const realIdx = state.currentTrackIndex + 1 + idx;
+        return `
+          <div class="p-3 rounded-xl bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] flex items-center justify-between transition cursor-pointer" onclick="playTrackAtIndex(${realIdx})">
+            <div class="flex items-center space-x-3.5 min-w-0 flex-1">
+              <span class="text-xs font-mono text-[var(--text-muted)] w-5 text-center">${idx + 1}</span>
+              <img src="${art}" onerror="this.onerror=null;this.src=DEFAULT_ART" class="w-10 h-10 rounded-lg object-cover shrink-0">
+              <div class="min-w-0 flex-1">
+                <h4 class="font-semibold text-xs text-[var(--text-primary)] truncate">${escapeHtml(t.title)}</h4>
+                <p class="text-[11px] text-[var(--text-muted)] truncate">${escapeHtml(t.artist || 'Unknown Artist')}</p>
+              </div>
+            </div>
+            <span class="text-xs font-mono text-[var(--text-muted)] shrink-0 ml-2">${formatTime(t.duration)}</span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function clearQueue() {
+      state.queue = [];
+      state.currentTrackIndex = -1;
+      audio.pause();
+      state.isPlaying = false;
+      updatePlayerUI();
+      showToast("Queue cleared");
+    }
+
+    // Lyrics Handling
+    async function fetchLyricsForTrack(trackId) {
+      state.lyricsList = [];
+      try {
+        const res = await fetch(`/api/lyrics/${encodeURIComponent(trackId)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.lyrics) {
+            state.lyricsList = parseLyrics(data.lyrics);
+          }
+        }
+      } catch (err) {
+        console.error("Lyrics fetch failed:", err);
+      }
+      renderLyrics();
+    }
+
+    function parseLyrics(raw) {
+      if (!raw) return [];
+      const lines = raw.split(/\r?\n/);
+      const parsed = [];
+      const timeRegex = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]/;
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const match = trimmed.match(timeRegex);
+        if (match) {
+          const min = parseInt(match[1], 10);
+          const sec = parseInt(match[2], 10);
+          const ms = match[3] ? parseInt(match[3].padEnd(3, "0").slice(0, 3), 10) : 0;
+          const total = min * 60 + sec + ms / 1000;
+          const text = trimmed.replace(timeRegex, "").trim();
+          parsed.push({ time: total, text: text || "♪" });
+        } else {
+          parsed.push({ time: null, text: trimmed });
+        }
+      }
+      return parsed;
+    }
+
+    function renderLyrics() {
+      const cur = getCurrentTrack();
+      const titleEl = document.getElementById("lyrics-track-title");
+      const artistEl = document.getElementById("lyrics-track-artist");
+      const container = document.getElementById("lyrics-scroll-container");
+
+      if (!cur) {
+        titleEl.innerText = "No song playing";
+        artistEl.innerText = "";
+        container.innerHTML = `<p class="text-xs text-[var(--text-muted)] py-8">Select a song to view lyrics</p>`;
+        return;
+      }
+
+      titleEl.innerText = cur.title;
+      artistEl.innerText = cur.artist || "Unknown Artist";
+
+      if (state.lyricsList.length === 0) {
+        container.innerHTML = `
+          <div class="py-12 space-y-2 text-center text-[var(--text-muted)]">
+            <svg class="w-8 h-8 mx-auto opacity-30 stroke-current" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
+            <p class="text-sm font-medium text-[var(--text-primary)]">No lyrics available</p>
+            <p class="text-xs">No synced or embedded lyrics found for this track.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = state.lyricsList.map((item, idx) => `
+        <p id="lyric-line-${idx}" 
+           class="lyric-line text-sm md:text-base font-semibold text-[var(--text-muted)] transition duration-300 py-1 cursor-pointer hover:text-white" 
+           onclick="jumpToLyricTime(${item.time !== null ? item.time : 'null'})">
+          ${escapeHtml(item.text)}
+        </p>
+      `).join("");
+
+      updateLyricsHighlight();
+    }
+
+    function jumpToLyricTime(sec) {
+      if (sec !== null && !isNaN(sec)) {
+        audio.currentTime = sec;
+        updateProgressUI();
+        updateLyricsHighlight();
+      }
+    }
+
+    function updateLyricsHighlight() {
+      if (!state.isLyricsOpen || state.lyricsList.length === 0) return;
+      const curTime = audio.currentTime || 0;
+      
+      let activeIdx = -1;
+      for (let i = 0; i < state.lyricsList.length; i++) {
+        const item = state.lyricsList[i];
+        if (item.time !== null && item.time <= curTime + 0.3) {
+          activeIdx = i;
+        }
+      }
+
+      document.querySelectorAll(".lyric-line").forEach((el, idx) => {
+        if (idx === activeIdx) {
+          el.className = "lyric-line text-base md:text-lg font-bold text-[var(--accent)] scale-105 transition duration-300 py-1.5 drop-shadow-[0_0_8px_var(--accent-glow)]";
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        } else {
+          el.className = "lyric-line text-sm md:text-base font-semibold text-[var(--text-muted)] transition duration-300 py-1 hover:text-white";
+        }
+      });
+    }
+
+    function toggleLyrics(forceState) {
+      state.isLyricsOpen = typeof forceState === "boolean" ? forceState : !state.isLyricsOpen;
+      const drawer = document.getElementById("lyrics-drawer");
+      const btnLyrics = document.getElementById("btn-lyrics");
+
+      if (state.isLyricsOpen) {
+        drawer.classList.remove("hidden");
+        drawer.classList.add("flex");
+        btnLyrics.classList.add("text-[var(--accent)]", "bg-[var(--accent-dim)]");
+        renderLyrics();
+      } else {
+        drawer.classList.add("hidden");
+        drawer.classList.remove("flex");
+        btnLyrics.classList.remove("text-[var(--accent)]", "bg-[var(--accent-dim)]");
+      }
+    }
+
+    // Search Logic & Online Zoink Provider
+    let searchTimer = null;
+    function handleSearchInput(val) {
+      state.searchQuery = val.trim();
+      const clearBtn = document.getElementById("search-clear-btn");
+      if (clearBtn) clearBtn.classList.toggle("hidden", state.searchQuery === "");
+
+      const deskInp = document.getElementById("global-search-input");
+      const mobInp = document.getElementById("mobile-search-input");
+      if (deskInp && deskInp.value !== val) deskInp.value = val;
+      if (mobInp && mobInp.value !== val) mobInp.value = val;
+
+      if (state.activeTab !== 'search' && state.searchQuery.length > 0) {
+        switchTab('search');
+      }
+
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        performSearch();
+      }, 250);
+    }
+
+    function clearSearch() {
+      handleSearchInput("");
+    }
+
+    function setSearchFilter(filter) {
+      state.searchFilter = filter;
+      document.querySelectorAll(".search-filter-btn").forEach(btn => {
+        if (btn.getAttribute("data-filter") === filter) {
+          btn.className = "search-filter-btn px-3.5 py-1.5 rounded-full font-medium transition bg-[var(--accent)] text-black";
+        } else {
+          btn.className = "search-filter-btn px-3.5 py-1.5 rounded-full font-medium transition bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-white border border-[var(--border-subtle)]";
+        }
+      });
+      performSearch();
+    }
+
+    function performSearch() {
+      const q = state.searchQuery.toLowerCase();
+      const emptyState = document.getElementById("search-empty-state");
+      const listContainer = document.getElementById("search-results-list");
+
+      if (!q) {
+        emptyState.classList.remove("hidden");
+        listContainer.innerHTML = "";
+        return;
+      }
+
+      emptyState.classList.add("hidden");
+
+      // Local library matches
+      const local = state.tracks.filter(t => 
+        t.title.toLowerCase().includes(q) || 
+        (t.artist && t.artist.toLowerCase().includes(q)) || 
+        (t.album && t.album.toLowerCase().includes(q))
+      );
+
+      let html = "";
+      if (local.length > 0) {
+        html += `
+          <div class="pb-2">
+            <p class="text-xs font-mono uppercase tracking-wider text-[var(--accent)] mb-2">From Your Library (${local.length})</p>
+            <div class="space-y-2">
+              ${local.map(t => {
+                const artUrl = `/api/artwork/${encodeURIComponent(t.id)}`;
+                const cur = getCurrentTrack();
+                const isCur = cur && cur.id === t.id;
+                return `
+                  <div class="group p-3 rounded-xl bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] flex items-center justify-between transition cursor-pointer ${isCur ? 'border-[var(--accent)]' : ''}" onclick="playTrackById('${escapeHtml(t.id)}')">
+                    <div class="flex items-center space-x-3.5 min-w-0 flex-1">
+                      <img src="${artUrl}" onerror="this.onerror=null;this.src=DEFAULT_ART" class="w-10 h-10 rounded-lg object-cover shrink-0">
+                      <div class="min-w-0 flex-1">
+                        <h4 class="font-semibold text-xs text-[var(--text-primary)] group-hover:text-[var(--accent)] truncate">${escapeHtml(t.title)}</h4>
+                        <p class="text-[11px] text-[var(--text-muted)] truncate">${escapeHtml(t.artist || 'Unknown Artist')} ${t.album ? '· ' + escapeHtml(t.album) : ''}</p>
+                      </div>
+                    </div>
+                    <div class="flex items-center space-x-2 shrink-0 ml-2">
+                      <span class="text-xs font-mono text-[var(--text-muted)]">${formatTime(t.duration)}</span>
+                      <a href="/api/file/${encodeURIComponent(t.id)}" download onclick="event.stopPropagation()" class="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)]" title="Export File">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                      </a>
+                    </div>
+                  </div>
+                `;
+              }).join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      const isUrl = q.startsWith("http://") || q.startsWith("https://");
+      html += `
+        <div class="p-4 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div>
+            <p class="font-bold text-xs text-[var(--text-primary)]">${isUrl ? 'Direct Music Link' : 'Search Online Music'}</p>
+            <p class="text-[11px] text-[var(--text-muted)]">${isUrl ? 'Download & import this audio directly to your library' : `Search YouTube provider for "${escapeHtml(state.searchQuery)}"`}</p>
+          </div>
+          <button onclick="${isUrl ? `startDirectZoink('${escapeHtml(state.searchQuery)}')` : `searchOnlineProvider('${escapeHtml(state.searchQuery)}')`}" class="px-4 py-2 rounded-lg bg-[var(--accent-dim)] text-[var(--accent)] border border-[var(--accent)] hover:bg-[var(--accent)] hover:text-black font-bold text-xs transition shrink-0">
+            ${isUrl ? 'Zoink & Import' : 'Search Online'}
+          </button>
+        </div>
+        <div id="online-search-results" class="space-y-2 mt-4"></div>
+      `;
+
+      listContainer.innerHTML = html;
+    }
+
+    async function searchOnlineProvider(query) {
+      const container = document.getElementById("online-search-results");
+      if (!container) return;
+      container.innerHTML = `<p class="text-xs text-[var(--text-muted)] py-4 text-center">Connecting to YouTube provider for "${escapeHtml(query)}"...</p>`;
+
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(query)}&limit=15`);
+        if (!res.ok) throw new Error("Search request failed");
+        const results = await res.json();
+        if (!Array.isArray(results) || results.length === 0) {
+          container.innerHTML = `<p class="text-xs text-[var(--text-muted)] py-4 text-center">No online tracks found for "${escapeHtml(query)}".</p>`;
+          return;
+        }
+
+        container.innerHTML = `
+          <p class="text-xs font-mono uppercase tracking-wider text-[var(--accent)] mb-2">Online Results (${results.length})</p>
+          <div class="space-y-2">
+            ${results.map(r => `
+              <div class="group p-3 rounded-xl bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] flex items-center justify-between transition">
+                <div class="flex items-center space-x-3 min-w-0 flex-1">
+                  <img src="${r.artwork_url || DEFAULT_ART}" onerror="this.onerror=null;this.src=DEFAULT_ART" class="w-10 h-10 rounded-lg object-cover shrink-0">
+                  <div class="min-w-0 flex-1">
+                    <h4 class="font-semibold text-xs truncate text-[var(--text-primary)]">${escapeHtml(r.title)}</h4>
+                    <p class="text-[11px] text-[var(--text-muted)] truncate">${escapeHtml(r.artist || 'YouTube')} · ${formatTime(r.duration)}</p>
+                  </div>
+                </div>
+                <button onclick='downloadOnlineTrack(${JSON.stringify(r).replace(/'/g, "&apos;")})' class="px-3.5 py-1.5 rounded-lg bg-[var(--accent)] text-black font-bold text-xs hover:bg-[var(--accent-hover)] transition shrink-0 ml-2">
+                  Zoink
+                </button>
+              </div>
+            `).join("")}
+          </div>
+        `;
+      } catch (err) {
+        container.innerHTML = `<p class="text-xs text-red-400 py-2 text-center">Failed to search: ${escapeHtml(err.message)}</p>`;
+      }
+    }
+
+    async function downloadOnlineTrack(track) {
+      showToast(`Zoinking "${track.title}" in background...`);
+      try {
+        const res = await fetch("/api/download", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ track })
+        });
+        if (res.ok) {
+          showToast(`✓ Zoink queued for "${track.title}"!`);
+          setTimeout(() => rescanLibrary(false), 4000);
+        }
+      } catch (err) {
+        showToast(`Error queuing download: ${err.message}`);
+      }
+    }
+
+    async function startDirectZoink(url) {
+      showToast("Zoinking audio from URL...");
+      try {
+        const res = await fetch("/api/download", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ track: { id: url, title: url, source: "youtube" } })
+        });
+        if (res.ok) {
+          showToast("✓ Zoink queued! Importing track into library...");
+          setTimeout(() => rescanLibrary(false), 4000);
+        }
+      } catch (err) {
+        showToast(`Error: ${err.message}`);
+      }
+    }
+
+    function promptQuickZoink(prefill = "") {
+      const target = prompt("Enter Song Name or Paste YouTube / Music URL:", prefill);
+      if (target && target.trim()) {
+        const clean = target.trim();
+        if (clean.startsWith("http://") || clean.startsWith("https://")) {
+          startDirectZoink(clean);
+        } else {
+          switchTab("search");
+          handleSearchInput(clean);
+          searchOnlineProvider(clean);
+        }
+      }
+    }
+
+    async function rescanLibrary(notify = true) {
+      if (notify) showToast("Scanning music directory...");
+      try {
+        const res = await fetch("/api/library/rescan", { method: "POST" });
+        if (res.ok) {
+          const data = await res.json();
+          await loadLibraryData();
+          if (notify) showToast(`✓ Scanned: ${data.total} tracks in library.`);
+        }
+      } catch (err) {
+        console.error("Rescan failed:", err);
+      }
+    }
+
+    function filterLibrary(filter) {
+      state.libFilter = filter;
+      document.querySelectorAll(".lib-tab-btn").forEach(btn => {
+        if (btn.getAttribute("data-lib") === filter) {
+          btn.className = "lib-tab-btn px-3 py-1 rounded-md font-medium text-[var(--accent)] bg-[var(--accent-dim)]";
+        } else {
+          btn.className = "lib-tab-btn px-3 py-1 rounded-md font-medium text-[var(--text-muted)] hover:text-white";
+        }
+      });
+      if (state.activeTab !== 'library') {
+        switchTab('library');
+      }
+      renderLibraryTable();
+    }
+
+    function filterByAlbum(albumName) {
+      switchTab('library');
+      state.tracks = state.tracks.filter(t => (t.album || '').toLowerCase() === albumName.toLowerCase());
+      renderLibraryTable();
+    }
+
+    // Tab Navigation
+    function switchTab(tab) {
+      state.activeTab = tab;
+      ['home', 'search', 'library', 'queue'].forEach(t => {
+        const btn = document.getElementById(`nav-${t}`);
+        const mobBtn = document.getElementById(`mob-nav-${t}`);
+        if (btn) {
+          btn.className = (t === tab)
+            ? "w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition text-[var(--accent)] bg-[var(--accent-dim)]"
+            : "w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)]";
+        }
+        if (mobBtn) {
+          mobBtn.className = (t === tab)
+            ? "flex flex-col items-center justify-center space-y-0.5 text-[var(--accent)]"
+            : "flex flex-col items-center justify-center space-y-0.5 text-[var(--text-muted)]";
+        }
+      });
+
+      document.getElementById("view-home").classList.toggle("hidden", tab !== 'home');
+      document.getElementById("view-search").classList.toggle("hidden", tab !== 'search');
+      document.getElementById("view-library").classList.toggle("hidden", tab !== 'library');
+      document.getElementById("view-queue").classList.toggle("hidden", tab !== 'queue');
+
+      if (tab === 'search') {
+        setTimeout(() => {
+          const inp = window.innerWidth >= 768 ? document.getElementById("global-search-input") : document.getElementById("mobile-search-input");
+          if (inp) inp.focus();
+        }, 100);
+      }
+      document.getElementById("content-scroll").scrollTop = 0;
+    }
+
+    function openMobileNowPlaying() {
+      if (window.innerWidth >= 768) return;
+      document.getElementById("mobile-now-playing-sheet").classList.remove("hidden");
+      document.getElementById("mobile-now-playing-sheet").classList.add("flex");
+      updatePlayerUI();
+    }
+
+    function closeMobileNowPlaying() {
+      document.getElementById("mobile-now-playing-sheet").classList.add("hidden");
+      document.getElementById("mobile-now-playing-sheet").classList.remove("flex");
+    }
+
+    function openSettingsModal() {
+      document.getElementById("settings-modal").classList.remove("hidden");
+    }
+
+    function closeSettingsModal() {
+      document.getElementById("settings-modal").classList.add("hidden");
+    }
+
+    function openShortcutsModal() {
+      alert("Keyboard Shortcuts:\n• Space: Play / Pause\n• Left / Right: Seek -10s / +10s\n• M: Mute / Unmute\n• Q: Open Queue\n• L: Toggle Lyrics\n• Esc: Close modals");
+    }
+
+    function setTheme(theme) {
+      document.documentElement.setAttribute("data-theme", theme);
+      localStorage.setItem("zoink_theme", theme);
+      showToast(`Theme: ${theme.toUpperCase()}`);
+    }
+
+    let toastTimeout = null;
+    function showToast(msg) {
+      const toast = document.getElementById("toast");
+      document.getElementById("toast-message").innerText = msg;
+      toast.classList.remove("hidden");
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        toast.classList.add("hidden");
+      }, 3200);
+    }
+
+    // Keyboard Shortcuts
+    window.addEventListener("keydown", (e) => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+      if (e.code === "Space") {
+        e.preventDefault();
+        togglePlay();
+      } else if (e.key === "ArrowLeft" || e.key === "j") {
+        if (audio.currentTime > 0) audio.currentTime = Math.max(0, audio.currentTime - 10);
+      } else if (e.key === "ArrowRight" || e.key === "l") {
+        if (audio.duration > 0) audio.currentTime = Math.min(audio.duration, audio.currentTime + 10);
+      } else if (e.key === "m") {
+        toggleMute();
+      } else if (e.key === "q") {
+        switchTab("queue");
+      } else if (e.key === "Escape") {
+        closeSettingsModal();
+        closeMobileNowPlaying();
+        toggleLyrics(false);
+      }
+    });
+
+    // Boot
+    window.addEventListener("DOMContentLoaded", () => {
+      const savedTheme = localStorage.getItem("zoink_theme") || "amoled";
+      setTheme(savedTheme);
+      loadLibraryData();
+    });
+  </script>
+</body>
+</html>

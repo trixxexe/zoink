@@ -1,0 +1,1088 @@
+ZoinK — TUI Song Downloader + Web Music Player
+
+You are building ZoinK, a polished, minimalistic TUI-first music downloader designed especially for Termux/Linux users.
+
+This is a real project, not a toy/demo. I want you to make strong engineering decisions autonomously, inspect existing code before changing it, and continuously keep the architecture clean.
+
+Product Vision
+
+ZoinK should feel like a peak terminal-native music application:
+
+- Minimalistic TUI
+- Extremely fast navigation
+- Search for songs
+- Preview useful metadata
+- One-key/one-action download
+- High-quality embedded metadata
+- Full album artwork embedded into files
+- Full lyrics embedded when available
+- Album/artist metadata
+- Batch/bulk downloads
+- Beautiful browser-based music player
+- Local web server
+- Browser player should work extremely well on a phone
+- Browser player must also have download functionality
+- Bulk downloading from the browser should be easy
+- Downloads should ultimately land somewhere practical on the user's device
+- Termux users should not have to fight with "mv", "cp", storage paths, or awkward file management
+
+The philosophy is:
+
+«Search → select → download → listen.
+
+No unnecessary complexity.»
+
+---
+
+IMPORTANT: Before Coding
+
+First inspect the repository and determine:
+
+1. Current project structure
+2. Existing language/toolchain
+3. Existing dependencies
+4. Existing implementation, if any
+5. Whether there are partially implemented features
+6. Build/test/lint commands
+7. Existing conventions
+8. Any architecture that should be preserved
+9. What should be rewritten rather than patched
+
+Do not blindly start coding.
+
+Create a concise implementation plan based on the actual repository.
+
+If the repository is empty, design the architecture from scratch.
+
+---
+
+Core UX
+
+TUI
+
+The TUI should be the primary interface.
+
+Think:
+
+- "fzf"
+- "lazygit"
+- modern terminal media players
+- minimalist Unix utilities
+
+But don't clone any existing application's UI.
+
+It should feel like its own product.
+
+Main screen
+
+Something conceptually like:
+
+╭──────────────────────────────────────────────────────────────╮
+│ ZoinK                                      ♪ Music Downloader │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Search                                                     │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │ Blinding Lights                                       │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  Results                                                     │
+│                                                              │
+│  ♫ Blinding Lights        The Weeknd             3:20       │
+│  ♫ Save Your Tears       The Weeknd             3:35       │
+│  ♫ Starboy               The Weeknd             3:50       │
+│                                                              │
+├──────────────────────────────────────────────────────────────┤
+│ ↑↓ Navigate   Enter Select   d Download   a Album   q Quit │
+╰──────────────────────────────────────────────────────────────╯
+
+This is only inspiration. Improve it.
+
+The UI must be:
+
+- responsive
+- keyboard friendly
+- readable
+- uncluttered
+- usable on small terminal screens
+- usable on large terminals
+- graceful when terminal dimensions change
+
+Avoid excessive ASCII decoration.
+
+Minimalism > visual noise.
+
+---
+
+TUI Navigation
+
+Support sensible keyboard controls.
+
+At minimum:
+
+- Arrow keys / vim keys for navigation
+- Enter = select
+- "/" or a dedicated key = search
+- "d" = download
+- "a" = album
+- "A" = artist/album actions where appropriate
+- "b" = bulk/batch actions
+- "p" = preview/details
+- "q" = quit
+- Esc = back/cancel
+
+Show context-sensitive key hints.
+
+Don't make users memorize obscure controls.
+
+---
+
+Search
+
+Implement a proper search abstraction.
+
+The downloader/search provider must NOT be tightly coupled to the TUI.
+
+Create a provider abstraction so the backend can be replaced later.
+
+Conceptually:
+
+SearchProvider
+    ├── search tracks
+    ├── search albums
+    ├── resolve track
+    ├── resolve album
+    └── retrieve media
+
+Search results should expose useful normalized metadata:
+
+- title
+- artist
+- album
+- album artist
+- duration
+- release date/year
+- track number
+- disc number
+- artwork
+- lyrics availability
+- source
+- stable identifier
+
+Never make the UI understand provider-specific response formats.
+
+---
+
+Downloads
+
+A single action should download a song.
+
+Example flow:
+
+Search
+  ↓
+Select track
+  ↓
+Download
+  ↓
+Resolve media
+  ↓
+Download audio
+  ↓
+Fetch metadata
+  ↓
+Fetch artwork
+  ↓
+Fetch lyrics
+  ↓
+Embed everything
+  ↓
+Write final file
+
+The final output should be a polished music file, not merely a raw audio stream.
+
+---
+
+Metadata
+
+Metadata quality is a major feature.
+
+Where available, embed:
+
+- Title
+- Artist
+- Album
+- Album Artist
+- Composer
+- Genre
+- Release date
+- Year
+- Track number
+- Disc number
+- Total tracks
+- Total discs
+- Copyright
+- Comment
+- ISRC
+- Source information where appropriate
+
+Use the correct tagging format for the selected output container.
+
+Do not blindly write ID3 tags into formats where they aren't appropriate.
+
+Design a metadata layer that understands the target container.
+
+---
+
+Album Artwork
+
+Download the highest-quality appropriate album artwork available.
+
+Embed it directly into the final audio file.
+
+Do not merely save:
+
+cover.jpg
+
+unless the user explicitly requests external artwork.
+
+Artwork should be embedded.
+
+Handle:
+
+- missing artwork
+- invalid artwork
+- oversized artwork
+- unusual MIME types
+- transparent images
+- network failures
+
+Gracefully.
+
+---
+
+Lyrics
+
+Fetch lyrics where available.
+
+Prefer full lyrics rather than snippets.
+
+Embed lyrics into the file using the appropriate metadata mechanism for that format.
+
+Lyrics failures must NOT cause an otherwise successful download to fail.
+
+For example:
+
+Audio       ✓
+Metadata    ✓
+Artwork     ✓
+Lyrics      —
+
+should still produce a valid downloaded track.
+
+Do not fabricate lyrics.
+
+---
+
+Audio Formats
+
+Design the system so formats are configurable.
+
+At minimum, architect support for common formats such as:
+
+- MP3
+- M4A
+- FLAC
+- Opus
+
+Do not assume that every source can provide every format.
+
+Clearly separate:
+
+Source format
+      ↓
+Decoder / remuxer / transcoder
+      ↓
+Output format
+      ↓
+Metadata embedding
+
+Avoid unnecessary transcoding.
+
+If a lossless/remux-compatible path exists, prefer it.
+
+Do not silently destroy audio quality.
+
+---
+
+Quality
+
+Make quality configurable.
+
+For example:
+
+Quality
+  Best available
+  Lossless
+  High
+  Medium
+
+Do not hardcode a single quality choice.
+
+The configuration system should make this extensible.
+
+---
+
+Download Manager
+
+Downloads should be managed through a dedicated subsystem.
+
+Support:
+
+- concurrent downloads
+- configurable concurrency
+- progress
+- cancellation
+- retry
+- resume where technically possible
+- duplicate detection
+- safe temporary files
+- atomic finalization
+- failed-download cleanup
+
+Never leave half-written files pretending to be completed downloads.
+
+Prefer:
+
+track.tmp
+   ↓
+verify
+   ↓
+embed metadata
+   ↓
+rename atomically
+   ↓
+track.ext
+
+---
+
+Bulk Downloads
+
+Bulk downloads are a first-class feature.
+
+Support selecting multiple tracks.
+
+Also support:
+
+- album download
+- artist/collection download where the provider supports it
+- playlist/batch download where feasible
+
+Show aggregate progress:
+
+Downloading 7 / 14
+
+██████████████░░░░░░  68%
+
+Current:
+Blinding Lights.mp3
+
+Completed:
+████████████████████
+
+Failed: 0
+
+Downloads should not become a chaotic wall of logs.
+
+Keep the UI clean.
+
+---
+
+File Organization
+
+Provide configurable download templates.
+
+For example:
+
+Music/
+  Artist/
+    Album/
+      01 - Track.ext
+
+Allow users to configure templates.
+
+Potential variables:
+
+{artist}
+{album_artist}
+{album}
+{title}
+{track}
+{disc}
+{year}
+
+Sanitize filenames safely.
+
+Handle:
+
+- "/"
+- "\"
+- ":"
+- Unicode
+- emojis
+- extremely long filenames
+- reserved filenames
+- duplicate names
+
+---
+
+Configuration
+
+Create a proper configuration system.
+
+Users should be able to configure things such as:
+
+- download directory
+- output format
+- quality
+- concurrency
+- filename template
+- album artwork behavior
+- lyrics behavior
+- metadata behavior
+- overwrite behavior
+- duplicate handling
+- server port
+- server bind address
+- theme where appropriate
+
+Provide sensible defaults.
+
+The application should work immediately after installation without requiring users to edit a config file.
+
+---
+
+Web Server
+
+ZoinK should optionally start a local web server.
+
+Example:
+
+zoink serve
+
+or an equivalent command appropriate to the project's architecture.
+
+The server should expose a polished browser music player.
+
+This isn't supposed to be a generic file browser.
+
+It is a music library/player.
+
+---
+
+Web Player
+
+The browser interface should be beautiful but minimal.
+
+Prioritize mobile usability.
+
+It should include:
+
+Library
+
+- Recently added
+- Artists
+- Albums
+- Songs
+
+Search
+
+Fast client-side/server-assisted search.
+
+Player
+
+- Play/pause
+- Previous/next
+- Seek
+- Duration
+- Volume
+- Queue
+- Shuffle
+- Repeat
+
+Artwork
+
+Use the embedded album artwork or associated metadata.
+
+Make album art prominent.
+
+Lyrics
+
+Display lyrics when available.
+
+Ideally provide a lyrics panel/view.
+
+Downloads
+
+Every track should have a download button.
+
+Albums should have:
+
+Download album
+
+Bulk selections should support:
+
+Download selected
+
+---
+
+Browser Download UX
+
+This is particularly important for Termux users.
+
+The web interface should make downloading files to the phone as frictionless as possible.
+
+The browser should receive proper:
+
+- Content-Disposition
+- MIME type
+- filename
+- range support where useful
+
+For multiple files, investigate the best practical browser-compatible approach.
+
+For example:
+
+Download selected
+        ↓
+ZIP / archive generation
+        ↓
+browser download
+
+if that provides a better experience.
+
+Do not force users to manually copy files around inside Termux.
+
+---
+
+Termux
+
+Treat Termux as a first-class environment.
+
+Do not assume:
+
+- systemd
+- desktop Linux
+- "/home/user"
+- root access
+- privileged ports
+
+The application should behave naturally in Termux.
+
+Document the recommended Termux storage setup.
+
+Do NOT blindly run commands that modify Android storage permissions.
+
+Instead, detect common Termux situations and provide clear instructions when required.
+
+Where possible, make the application work with a user-selected output directory.
+
+---
+
+Server Security
+
+The web server is local software, but do not treat security casually.
+
+By default:
+
+- bind only to localhost unless explicitly configured
+- do not expose arbitrary filesystem access
+- sanitize all paths
+- prevent path traversal
+- validate download identifiers
+- do not expose secrets/configuration
+- avoid arbitrary command execution
+- don't trust client-provided filenames
+
+If LAN access is explicitly enabled, make that choice obvious.
+
+---
+
+API Design
+
+Keep the web frontend independent from internal downloader implementation.
+
+Create clean API boundaries.
+
+Potential endpoints:
+
+GET    /api/search
+GET    /api/library
+GET    /api/tracks/:id
+GET    /api/albums/:id
+GET    /api/artwork/:id
+GET    /api/lyrics/:id
+
+POST   /api/download
+POST   /api/download/bulk
+
+GET    /api/download/:id/status
+DELETE /api/download/:id
+
+GET    /api/stream/:id
+GET    /api/file/:id
+
+Adapt this to the actual framework/language.
+
+Do not blindly implement endpoints that aren't necessary.
+
+---
+
+Streaming
+
+The browser player should stream local music rather than requiring a complete download first.
+
+Support HTTP range requests so seeking works properly.
+
+Don't load entire large audio files into memory.
+
+Use streaming I/O.
+
+---
+
+Architecture
+
+Strongly separate:
+
+CLI/TUI
+   │
+   ├── Application layer
+   │
+   ├── Search
+   │
+   ├── Media resolution
+   │
+   ├── Download manager
+   │
+   ├── Metadata
+   │
+   ├── Artwork
+   │
+   ├── Lyrics
+   │
+   ├── Library
+   │
+   └── Web server/API
+          │
+          └── Web UI
+
+The TUI and Web UI should consume the same underlying application services.
+
+Do not duplicate downloader logic between them.
+
+---
+
+Database / Library
+
+If a local database is useful, use a lightweight embedded database.
+
+Track:
+
+- downloaded tracks
+- paths
+- metadata
+- albums
+- artists
+- artwork references
+- lyrics state
+- download status
+
+Do not introduce a database just because databases are cool.
+
+If filesystem scanning + metadata parsing is sufficient, keep the system simpler.
+
+---
+
+Error Handling
+
+Errors should be human-readable.
+
+Bad:
+
+Error: request failed
+
+Better:
+
+Couldn't fetch artwork.
+
+Reason:
+The artwork provider timed out.
+
+The track itself downloaded successfully.
+
+Classify failures where practical:
+
+- network
+- provider
+- authentication
+- unavailable media
+- metadata
+- filesystem
+- permissions
+- transcoding
+- corrupted media
+
+A failure in an optional enhancement should not necessarily fail the entire download.
+
+---
+
+Logging
+
+Provide useful logging without destroying the TUI.
+
+Support appropriate verbosity levels.
+
+For example:
+
+quiet
+normal
+verbose
+debug
+
+Make debug logs easy to collect when reporting bugs.
+
+---
+
+CLI
+
+Besides the TUI, provide useful non-interactive commands where appropriate.
+
+Potentially:
+
+zoink
+zoink search "..."
+zoink download "..."
+zoink album "..."
+zoink serve
+zoink config
+
+Exact commands are your architectural decision.
+
+The CLI should be scriptable.
+
+This is especially valuable for Termux users.
+
+---
+
+Quality of Life
+
+Consider features such as:
+
+- clipboard-friendly output
+- notifications when bulk downloads finish
+- download history
+- recently downloaded
+- duplicate detection
+- resume interrupted downloads
+- graceful Ctrl+C
+- automatic metadata refresh
+- library rescan
+- portable configuration
+- shell completion
+
+Only implement features that fit the architecture.
+
+Do not turn ZoinK into bloatware.
+
+---
+
+Visual Design
+
+The visual identity should be:
+
+Minimal. Dark. Clean. Music-focused.
+
+Avoid:
+
+- giant ASCII art
+- rainbow terminal colors
+- excessive borders
+- information overload
+- unnecessary animations
+
+Use visual hierarchy instead.
+
+A user should understand the screen in less than a second.
+
+The web player should similarly feel like a focused music application rather than an admin dashboard.
+
+---
+
+Dependencies
+
+Before adding a dependency:
+
+1. Determine whether the standard library already solves the problem.
+2. Check whether the dependency is maintained.
+3. Check its license.
+4. Check whether it works on Termux.
+5. Consider binary size and startup time.
+6. Consider whether it introduces unnecessary complexity.
+
+Prefer mature, boring dependencies over trendy ones.
+
+---
+
+Testing
+
+Write real tests.
+
+At minimum test:
+
+- filename sanitization
+- metadata mapping
+- path safety
+- duplicate detection
+- download state transitions
+- retry behavior
+- configuration parsing
+- API behavior
+- range requests
+- provider normalization
+- album parsing
+- bulk download behavior
+
+Mock network/provider boundaries.
+
+Do not make tests depend on live music providers unless explicitly marked as integration tests.
+
+---
+
+Provider Architecture
+
+Treat external music/media providers as unreliable.
+
+Provider failures should not crash the entire application.
+
+Create clean interfaces around them.
+
+Do not scatter provider-specific assumptions throughout the codebase.
+
+If provider implementations already exist in the repository, inspect them carefully before replacing them.
+
+---
+
+Legal / Responsible Design
+
+ZoinK is a downloader/player application.
+
+Do not implement DRM circumvention.
+
+Do not bypass authentication or access controls.
+
+Do not design around defeating provider restrictions.
+
+Respect provider terms and copyright requirements.
+
+The architecture should allow legitimate sources and user-authorized media.
+
+---
+
+Performance
+
+ZoinK should feel instant.
+
+Pay attention to:
+
+- startup time
+- TUI rendering
+- search latency
+- memory usage
+- concurrent downloads
+- streaming
+- large libraries
+- artwork handling
+- metadata parsing
+
+Avoid loading an entire music library into memory if it becomes large.
+
+---
+
+UX Principle
+
+Whenever there is a choice between:
+
+technically clever
+
+and
+
+simple and obvious
+
+prefer simple and obvious.
+
+Whenever there is a choice between:
+
+more features
+
+and
+
+better core workflow
+
+choose the better core workflow.
+
+The killer loop is:
+
+Search
+ ↓
+Select
+ ↓
+Download
+ ↓
+Done
+
+Everything else should support that.
+
+---
+
+Development Process
+
+Work in phases.
+
+Phase 1 — Architecture
+
+Inspect the repo and establish:
+
+- language/toolchain
+- module structure
+- provider abstraction
+- application services
+- config
+- storage
+- downloader
+- metadata pipeline
+- web/API boundary
+
+Do not overengineer.
+
+Phase 2 — Core Downloader
+
+Implement:
+
+- provider abstraction
+- search
+- media resolution
+- download manager
+- filesystem handling
+- metadata
+- artwork
+- lyrics
+- finalization
+
+Phase 3 — TUI
+
+Build the complete terminal experience around the application layer.
+
+Phase 4 — Web Server
+
+Build the API and streaming layer.
+
+Phase 5 — Web Player
+
+Build the mobile-first music player.
+
+Phase 6 — Bulk Operations
+
+Implement polished album/batch workflows.
+
+Phase 7 — Hardening
+
+Focus on:
+
+- error handling
+- retries
+- corrupted downloads
+- cancellation
+- path safety
+- concurrency
+- performance
+- Termux compatibility
+
+Phase 8 — Polish
+
+Make everything feel cohesive.
+
+---
+
+Important Agent Behavior
+
+Do not ask me for permission for every tiny implementation decision.
+
+Make reasonable engineering decisions yourself.
+
+However:
+
+- Do not make destructive changes without understanding the existing code.
+- Do not rewrite working subsystems merely for style.
+- Do not add dependencies unnecessarily.
+- Do not fake functionality.
+- Do not leave TODO-driven pseudo implementations.
+- Do not claim a feature works unless it actually works.
+- Run tests/builds after meaningful changes.
+- Fix errors you introduce.
+- Keep the repository buildable throughout development.
+
+When something cannot be implemented cleanly because an external provider does not support it, build the correct abstraction and graceful fallback rather than pretending.
+
+---
+
+Definition of Done
+
+ZoinK is successful when a Termux user can do something approximately like:
+
+$ zoink
+
+Search:
+
+> Blinding Lights
+
+Select:
+
+> The Weeknd — Blinding Lights
+
+Press:
+
+d
+
+and get a properly named, high-quality audio file with:
+
+✓ Audio
+✓ Metadata
+✓ Album artwork
+✓ Lyrics (when available)
+✓ Correct filename
+✓ Correct directory
+
+Then:
+
+$ zoink serve
+
+Open the displayed local URL on the phone browser and get:
+
+        [ Album Art ]
+
+        Blinding Lights
+        The Weeknd
+
+    ───────●────────
+
+       ◀   ▶   ▶▶
+
+        Lyrics
+
+   Download     ⋮
+
+with a proper library, search, streaming, artwork, lyrics, and bulk downloading.
+
+That is the product.
+
+Start by inspecting the repository and producing the architecture/implementation plan. Then implement it incrementally, testing each major subsystem as you go.

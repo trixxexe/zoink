@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: zoink
+Version: 0.1.0
+Summary: ZoinK — TUI Song Downloader + Web Music Player
+Requires-Python: >=3.10
+Requires-Dist: yt-dlp>=2024.1.0
+Requires-Dist: mutagen>=1.47.0
+Requires-Dist: flask>=3.0
+Requires-Dist: requests>=2.28
+Requires-Dist: rich>=13.0
+Requires-Dist: prompt_toolkit>=3.0
