@@ -120,3 +120,57 @@ def test_library_get_track_by_id(tmp_path):
     assert result is not None
     assert result["title"] == "Find Me"
     assert lib.get_track_by_id("nonexistent") is None
+
+
+def test_library_scan_filters_non_zoink_files(tmp_path, monkeypatch):
+    config = Config()
+    config["download_dir"] = str(tmp_path)
+    lib = Library(config)
+
+    # File 1: ZoinK download
+    f_zoink = tmp_path / "zoink_song.mp3"
+    f_zoink.write_bytes(b"ID3" + b"\x00" * 200)
+
+    # File 2: External audio file placed in folder
+    f_ext = tmp_path / "external_song.mp3"
+    f_ext.write_bytes(b"ID3" + b"\x00" * 200)
+
+    def mock_read_metadata(p: Path):
+        if p.name == "zoink_song.mp3":
+            return TrackResult(id="z1", title="ZoinK Track", artist="Artist", source="youtube")
+        return TrackResult(id="ext1", title="External Track", artist="Artist", source="local")
+
+    monkeypatch.setattr("zoink.library.read_metadata", mock_read_metadata)
+
+    scanned = lib.scan_directory(prune=True, only_zoink=True)
+    assert scanned == 1
+    assert lib.count() == 1
+
+    tracks = lib.get_all()
+    assert len(tracks) == 1
+    assert tracks[0]["title"] == "ZoinK Track"
+
+
+def test_library_reopen_persistence(tmp_path):
+    config = Config()
+    config["download_dir"] = str(tmp_path)
+
+    # Session 1: Download track and store in library
+    lib1 = Library(config)
+    f = tmp_path / "song.mp3"
+    f.write_bytes(b"audio data")
+    t = TrackResult(id="s1", title="Persisted Song", artist="Artist", source="youtube")
+    lib1.add_track(f, t)
+    assert lib1.count() == 1
+
+    # Session 2: Close and re-open (new Library instance)
+    lib2 = Library(config)
+    assert lib2.count() == 1
+    tracks = lib2.get_all()
+    assert len(tracks) == 1
+    assert tracks[0]["title"] == "Persisted Song"
+
+    # Rescan should retain the track
+    lib2.scan_directory(prune=True)
+    assert lib2.count() == 1
+

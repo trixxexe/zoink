@@ -179,6 +179,12 @@ class ZoinKTUI:
         # Active background cancel flag
         self.is_cancelled: bool = False
 
+        # Initialize library tracks on startup
+        try:
+            self._reload_library_tracks()
+        except Exception:
+            pass
+
     def notify(self) -> None:
         """Request UI repaint. No-op if shutting down or exiting."""
         if self.should_exit or self._is_shutting_down:

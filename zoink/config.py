@@ -22,17 +22,32 @@ def _default_output_dir() -> Path:
         if candidate.exists():
             return candidate
         shared = home / "storage" / "shared"
-        return shared if shared.exists() else home / "Music"
+        if shared.exists():
+            return shared / "Music" if (shared / "Music").exists() else shared
+        return home / "Music"
     if platform.system() == "Windows":
         return home / "Downloads" / "Music"
     if platform.system() == "Darwin":
         return home / "Downloads" / "Music"
+
+    # Standard Linux / POSIX: check XDG Music Directory first
+    xdg_music = os.environ.get("XDG_MUSIC_DIR", "").strip()
+    if xdg_music:
+        p = Path(xdg_music).expanduser()
+        if p.exists():
+            return p
+
+    # Standard ~/Music folder (e.g. /root/Music or /home/<user>/Music)
+    music_dir = home / "Music"
+    if music_dir.exists():
+        return music_dir
+
     xdg = os.environ.get("XDG_DOWNLOAD_DIR", "").strip()
     if xdg:
         p = Path(xdg).expanduser()
         if p.exists():
             return p / "Music"
-    return home / "Downloads" / "Music"
+    return home / "Music"
 
 
 CONFIG_DIR = Path(

@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Optional
 
 from mutagen.flac import FLAC, Picture
+import re
+
 from mutagen.id3 import (
     ID3,
     APIC,
@@ -20,6 +22,7 @@ from mutagen.id3 import (
     TCOM,
     TCON,
     TDRC,
+    TENC,
     TIT2,
     TPE1,
     TPE2,
@@ -180,9 +183,11 @@ def _embed_mp3(
     if track.genre:
         tags.add(TCON(encoding=3, text=[track.genre]))
 
-    comment_str = track.comment or (f"Source: {track.source}" if track.source else "")
-    if comment_str:
-        tags.add(COMM(encoding=3, lang="eng", desc="", text=[comment_str]))
+    src = track.source or "youtube"
+    base_comment = track.comment or f"Source: {src}"
+    comment_str = f"ZoinK | {base_comment}" if "zoink" not in base_comment.lower() else base_comment
+    tags.add(COMM(encoding=3, lang="eng", desc="", text=[comment_str]))
+    tags.add(TENC(encoding=3, text=["ZoinK"]))
 
     if art:
         mime = _mime_from_data(art)
@@ -225,9 +230,11 @@ def _embed_m4a(
         tags["trkn"] = [(track.track_number, track.total_tracks or 0)]
     if track.disc_number:
         tags["disk"] = [(track.disc_number, track.total_discs or 0)]
-    comment_str = track.comment or (f"Source: {track.source}" if track.source else "")
-    if comment_str:
-        tags["\xa9cmt"] = [comment_str]
+    src = track.source or "youtube"
+    base_comment = track.comment or f"Source: {src}"
+    comment_str = f"ZoinK | {base_comment}" if "zoink" not in base_comment.lower() else base_comment
+    tags["\xa9cmt"] = [comment_str]
+    tags["\xa9enc"] = ["ZoinK"]
 
     if art:
         mime = _mime_from_data(art)
@@ -275,9 +282,11 @@ def _embed_flac(
     if track.genre:
         audio["genre"] = [track.genre]
 
-    comment_str = track.comment or (f"Source: {track.source}" if track.source else "")
-    if comment_str:
-        audio["comment"] = [comment_str]
+    src = track.source or "youtube"
+    base_comment = track.comment or f"Source: {src}"
+    comment_str = f"ZoinK | {base_comment}" if "zoink" not in base_comment.lower() else base_comment
+    audio["comment"] = [comment_str]
+    audio["encoder"] = ["ZoinK"]
 
     if art:
         audio.clear_pictures()
@@ -322,9 +331,11 @@ def _embed_ogg(
     if track.genre:
         audio["genre"] = [track.genre]
 
-    comment_str = track.comment or (f"Source: {track.source}" if track.source else "")
-    if comment_str:
-        audio["comment"] = [comment_str]
+    src = track.source or "youtube"
+    base_comment = track.comment or f"Source: {src}"
+    comment_str = f"ZoinK | {base_comment}" if "zoink" not in base_comment.lower() else base_comment
+    audio["comment"] = [comment_str]
+    audio["encoder"] = ["Lavc libopus (ZoinK)"]
 
     if art:
         pic = _cover_from_data(art)
@@ -341,6 +352,41 @@ def _embed_ogg(
         return True
     except Exception:
         return False
+
+
+def extract_zoink_source(comment: str = "", encoder: str = "") -> Optional[str]:
+    """Extract provider source from audio tags if downloaded through ZoinK.
+
+    Returns provider string (e.g. 'youtube', 'soundcloud', 'bandcamp', 'zoink')
+    if identified as a ZoinK download, or None if external/local.
+    """
+    if not comment and not encoder:
+        return None
+    c_lower = (comment or "").lower()
+    e_lower = (encoder or "").lower()
+
+    # Match "Source: <provider>" pattern
+    m = re.search(r"source:\s*([a-zA-Z0-9_\-]+)", c_lower)
+    if m:
+        src = m.group(1).strip()
+        return src
+
+    # Match ZoinK signature in comment or encoder
+    if "zoink" in c_lower or "zoink" in e_lower:
+        return "zoink"
+
+    return None
+
+
+def is_zoink_file(filepath: Path | str) -> bool:
+    """Check if an audio file on disk was downloaded through ZoinK."""
+    fp = Path(filepath)
+    if not fp.exists() or not fp.is_file():
+        return False
+    track = read_metadata(fp)
+    if not track:
+        return False
+    return bool(track.source and track.source not in ("local", "external"))
 
 
 def read_metadata(filepath: Path) -> Optional[TrackResult]:
@@ -397,6 +443,14 @@ def _read_mp3(fp: Path) -> Optional[TrackResult]:
             lyrics = str(tags[k].text)
             break
 
+    comment = ""
+    for k in tags:
+        if k.startswith("COMM"):
+            comment = str(tags[k].text[0]) if tags[k].text else ""
+            break
+    encoder = _get("TENC")
+    source = extract_zoink_source(comment, encoder) or "local"
+
     duration = 0
     try:
         mf = mutagen.File(fp)
@@ -421,7 +475,8 @@ def _read_mp3(fp: Path) -> Optional[TrackResult]:
         has_lyrics=bool(lyrics),
         lyrics=lyrics,
         artwork_url="" if not has_artwork else f"local://{fp.stem}",
-        source="local",
+        source=source,
+        comment=comment,
         filepath=str(fp),
         duration=duration,
     )
@@ -454,6 +509,9 @@ def _read_m4a(fp: Path) -> Optional[TrackResult]:
 
     has_artwork = "covr" in tags and len(tags["covr"]) > 0
     lyrics = str((tags.get("\xa9lyr") or [""])[0])
+    comment = str((tags.get("\xa9cmt") or [""])[0])
+    encoder = str((tags.get("\xa9enc") or [""])[0])
+    source = extract_zoink_source(comment, encoder) or "local"
 
     duration = int(getattr(audio.info, "length", 0)) if hasattr(audio, "info") and audio.info else 0
 
@@ -473,7 +531,8 @@ def _read_m4a(fp: Path) -> Optional[TrackResult]:
         has_lyrics=bool(lyrics),
         lyrics=lyrics,
         artwork_url="" if not has_artwork else f"local://{fp.stem}",
-        source="local",
+        source=source,
+        comment=comment,
         filepath=str(fp),
         duration=duration,
     )
@@ -503,6 +562,10 @@ def _read_flac(fp: Path) -> Optional[TrackResult]:
     lyrics = _get("lyrics")
     has_artwork = bool(audio.pictures)
 
+    comment = _get("comment")
+    encoder = _get("encoder")
+    source = extract_zoink_source(comment, encoder) or "local"
+
     duration = int(getattr(audio.info, "length", 0)) if hasattr(audio, "info") and audio.info else 0
 
     return TrackResult(
@@ -521,7 +584,8 @@ def _read_flac(fp: Path) -> Optional[TrackResult]:
         has_lyrics=bool(lyrics),
         lyrics=lyrics,
         artwork_url="" if not has_artwork else f"local://{fp.stem}",
-        source="local",
+        source=source,
+        comment=comment,
         filepath=str(fp),
         duration=duration,
     )
@@ -551,6 +615,10 @@ def _read_ogg(fp: Path) -> Optional[TrackResult]:
     lyrics = _get("lyrics")
     has_artwork = "metadata_block_picture" in audio
 
+    comment = _get("comment")
+    encoder = _get("encoder")
+    source = extract_zoink_source(comment, encoder) or "local"
+
     duration = int(getattr(audio.info, "length", 0)) if hasattr(audio, "info") and audio.info else 0
 
     return TrackResult(
@@ -569,7 +637,8 @@ def _read_ogg(fp: Path) -> Optional[TrackResult]:
         has_lyrics=bool(lyrics),
         lyrics=lyrics,
         artwork_url="" if not has_artwork else f"local://{fp.stem}",
-        source="local",
+        source=source,
+        comment=comment,
         filepath=str(fp),
         duration=duration,
     )

@@ -190,3 +190,30 @@ def test_web_stream_transcode_mp3(test_env):
     assert res.status_code == 200
     assert res.headers["Content-Type"] == "audio/mpeg"
 
+
+def test_web_only_shows_zoink_tracks(test_env):
+    _, lib, client, music_dir = test_env
+    # 1. ZoinK track
+    f_zoink = music_dir / "zoink.mp3"
+    f_zoink.write_bytes(b"data")
+    lib.add_track(f_zoink, TrackResult(id="z1", title="ZoinK Download", artist="Artist", source="youtube"))
+
+    # 2. External local file
+    f_ext = music_dir / "external.mp3"
+    f_ext.write_bytes(b"data")
+    lib.add_track(f_ext, TrackResult(id="e1", title="External File", artist="Artist", source="local"))
+
+    res = client.get("/api/library")
+    assert res.status_code == 200
+    data = res.get_json()
+    titles = [t["title"] for t in data]
+    assert "ZoinK Download" in titles
+    assert "External File" not in titles
+
+    res_rec = client.get("/api/recent")
+    assert res_rec.status_code == 200
+    rec_titles = [t["title"] for t in res_rec.get_json()]
+    assert "ZoinK Download" in rec_titles
+    assert "External File" not in rec_titles
+
+

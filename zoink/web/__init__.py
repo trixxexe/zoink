@@ -114,7 +114,11 @@ def _find_track_file(track_id_or_path: str) -> Optional[tuple[dict | None, Path]
     safe_fp = _resolve_safe_path(track_id_or_path, cfg.download_dir)
     if safe_fp:
         track_info = lib.get_track_by_path(safe_fp)
-        return track_info, safe_fp
+        if track_info:
+            return track_info, safe_fp
+        from zoink.metadata import is_zoink_file
+        if is_zoink_file(safe_fp):
+            return track_info, safe_fp
 
     return None
 
@@ -282,6 +286,12 @@ def api_library():
         tracks = lib.search(q, limit)
     else:
         tracks = lib.get_all(limit, offset)
+        if not tracks and offset == 0:
+            try:
+                lib.scan_directory(prune=False)
+                tracks = lib.get_all(limit, offset)
+            except Exception:
+                pass
     return jsonify(tracks)
 
 
@@ -289,7 +299,14 @@ def api_library():
 def api_recent():
     lib = _get_library()
     limit = min(int(request.args.get("limit", 30)), 100)
-    return jsonify(lib.get_recent(limit))
+    tracks = lib.get_recent(limit)
+    if not tracks:
+        try:
+            lib.scan_directory(prune=False)
+            tracks = lib.get_recent(limit)
+        except Exception:
+            pass
+    return jsonify(tracks)
 
 
 @app.route("/api/artists")
