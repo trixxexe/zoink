@@ -43,6 +43,7 @@ class TUIPhase(enum.Enum):
     LIBRARY = "library"
     LIBRARY_DETAIL = "library_detail"
     HELP = "help"
+    CONFIG = "config"
 
 
 SLASH_COMMANDS: list[tuple[str, str]] = [
@@ -51,7 +52,7 @@ SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/theme", "Toggle dark / light / auto theme mode"),
     ("/scan", "Rescan music folder and index tracks"),
     ("/web", "Launch local web player server"),
-    ("/config", "View current configuration settings"),
+    ("/config", "Customise settings, download options, and web player name"),
     ("/quit", "Exit ZoinK cleanly"),
 ]
 
@@ -179,6 +180,13 @@ class ZoinKTUI:
         # Active background cancel flag
         self.is_cancelled: bool = False
 
+        # Configuration screen state
+        self.config_cursor: int = 0
+        self.config_editing: bool = False
+        self.config_edit_value: str = ""
+        self.config_edit_cursor: int = 0
+        self.config_status_message: str = ""
+
         # Initialize library tracks on startup
         try:
             self._reload_library_tracks()
@@ -248,6 +256,13 @@ class ZoinKTUI:
         """Insert text at current input cursor position."""
         if not text:
             return
+        if self.phase == TUIPhase.CONFIG and self.config_editing:
+            left = self.config_edit_value[:self.config_edit_cursor]
+            right = self.config_edit_value[self.config_edit_cursor:]
+            self.config_edit_value = left + text + right
+            self.config_edit_cursor += len(text)
+            self.notify()
+            return
         left = self.input_text[:self.input_cursor]
         right = self.input_text[self.input_cursor:]
         self.input_text = left + text + right
@@ -257,6 +272,14 @@ class ZoinKTUI:
 
     def delete_backwards(self) -> None:
         """Delete character before cursor."""
+        if self.phase == TUIPhase.CONFIG and self.config_editing:
+            if self.config_edit_cursor > 0:
+                left = self.config_edit_value[:self.config_edit_cursor - 1]
+                right = self.config_edit_value[self.config_edit_cursor:]
+                self.config_edit_value = left + right
+                self.config_edit_cursor -= 1
+                self.notify()
+            return
         if self.input_cursor > 0:
             left = self.input_text[:self.input_cursor - 1]
             right = self.input_text[self.input_cursor:]
@@ -267,6 +290,13 @@ class ZoinKTUI:
 
     def delete_forwards(self) -> None:
         """Delete character at cursor."""
+        if self.phase == TUIPhase.CONFIG and self.config_editing:
+            if self.config_edit_cursor < len(self.config_edit_value):
+                left = self.config_edit_value[:self.config_edit_cursor]
+                right = self.config_edit_value[self.config_edit_cursor + 1:]
+                self.config_edit_value = left + right
+                self.notify()
+            return
         if self.input_cursor < len(self.input_text):
             left = self.input_text[:self.input_cursor]
             right = self.input_text[self.input_cursor + 1:]
@@ -276,6 +306,20 @@ class ZoinKTUI:
 
     def delete_word_backwards(self) -> None:
         """Delete word before cursor (Ctrl+W)."""
+        if self.phase == TUIPhase.CONFIG and self.config_editing:
+            if self.config_edit_cursor <= 0:
+                return
+            s = self.config_edit_value[:self.config_edit_cursor]
+            i = len(s)
+            while i > 0 and s[i - 1] == ' ':
+                i -= 1
+            while i > 0 and s[i - 1] != ' ':
+                i -= 1
+            new_prefix = s[:i].rstrip()
+            self.config_edit_value = new_prefix + self.config_edit_value[self.config_edit_cursor:]
+            self.config_edit_cursor = len(new_prefix)
+            self.notify()
+            return
         if self.input_cursor <= 0:
             return
         s = self.input_text[:self.input_cursor]
@@ -291,20 +335,38 @@ class ZoinKTUI:
         self.notify()
 
     def move_cursor_left(self) -> None:
+        if self.phase == TUIPhase.CONFIG and self.config_editing:
+            if self.config_edit_cursor > 0:
+                self.config_edit_cursor -= 1
+                self.notify()
+            return
         if self.input_cursor > 0:
             self.input_cursor -= 1
             self.notify()
 
     def move_cursor_right(self) -> None:
+        if self.phase == TUIPhase.CONFIG and self.config_editing:
+            if self.config_edit_cursor < len(self.config_edit_value):
+                self.config_edit_cursor += 1
+                self.notify()
+            return
         if self.input_cursor < len(self.input_text):
             self.input_cursor += 1
             self.notify()
 
     def move_cursor_home(self) -> None:
+        if self.phase == TUIPhase.CONFIG and self.config_editing:
+            self.config_edit_cursor = 0
+            self.notify()
+            return
         self.input_cursor = 0
         self.notify()
 
     def move_cursor_end(self) -> None:
+        if self.phase == TUIPhase.CONFIG and self.config_editing:
+            self.config_edit_cursor = len(self.config_edit_value)
+            self.notify()
+            return
         self.input_cursor = len(self.input_text)
         self.notify()
 
@@ -674,8 +736,8 @@ class ZoinKTUI:
                 self.show_error(f"Failed to scan directory: {e}")
         elif c in ("/web", "/server"):
             self.open_web_player()
-        elif c in ("/config", "/cfg"):
-            self.open_help()
+        elif c in ("/config", "/cfg", "/settings", "/preferences"):
+            self.open_config()
         elif c in ("/quit", "/exit", "/q"):
             self.request_exit()
         elif c in ("/clear", "/c"):
@@ -688,6 +750,157 @@ class ZoinKTUI:
         self.prev_phase = self.phase
         self.phase = TUIPhase.HELP
         self.notify()
+
+    def open_config(self) -> None:
+        """Switch to the interactive configuration / settings view."""
+        self.prev_phase = self.phase
+        self.phase = TUIPhase.CONFIG
+        self.config_cursor = 0
+        self.config_editing = False
+        self.config_edit_value = ""
+        self.config_edit_cursor = 0
+        self.config_status_message = ""
+        self.notify()
+
+    def _get_config_items(self) -> list[dict]:
+        """Return structured configuration items for user customization."""
+        return [
+            {
+                "key": "user_name",
+                "label": "Web Player Name",
+                "type": "text",
+                "value": self.config.user_name,
+                "desc": "Display name in web player greeting ('Good evening, <Name>')",
+            },
+            {
+                "key": "output_format",
+                "label": "Audio Format",
+                "type": "choice",
+                "choices": ["mp3", "m4a", "opus", "flac"],
+                "value": self.config.output_format,
+                "desc": "Target container format for downloaded audio",
+            },
+            {
+                "key": "quality",
+                "label": "Audio Quality",
+                "type": "choice",
+                "choices": ["best", "320k", "256k", "192k", "128k"],
+                "value": self.config.quality,
+                "desc": "Bitrate / quality profile for conversion",
+            },
+            {
+                "key": "theme",
+                "label": "Theme Mode",
+                "type": "choice",
+                "choices": ["auto", "dark", "light"],
+                "value": self.theme_mode,
+                "desc": "TUI color scheme (auto detects terminal background)",
+            },
+            {
+                "key": "embed_artwork",
+                "label": "Embed Artwork",
+                "type": "toggle",
+                "value": self.config.embed_artwork,
+                "desc": "Embed cover art directly into downloaded audio tags",
+            },
+            {
+                "key": "embed_lyrics",
+                "label": "Embed Lyrics",
+                "type": "toggle",
+                "value": self.config.embed_lyrics,
+                "desc": "Fetch and embed synced/plain lyrics into audio tags",
+            },
+            {
+                "key": "download_dir",
+                "label": "Music Folder",
+                "type": "text",
+                "value": str(self.config.download_dir),
+                "desc": "Local folder where downloaded audio files are saved",
+            },
+            {
+                "key": "server_lan",
+                "label": "LAN Web Player",
+                "type": "toggle",
+                "value": self.config.server_lan,
+                "desc": "Allow other devices on local network to access web player",
+            },
+            {
+                "key": "duplicate_handling",
+                "label": "Duplicate Files",
+                "type": "choice",
+                "choices": ["skip", "overwrite", "rename"],
+                "value": self.config.duplicate_handling,
+                "desc": "Action when target audio file already exists on disk",
+            },
+        ]
+
+    def handle_cycle_config(self, forward: bool = True) -> None:
+        """Cycle or toggle the currently selected configuration setting."""
+        items = self._get_config_items()
+        if not (0 <= self.config_cursor < len(items)):
+            return
+        item = items[self.config_cursor]
+        key = item["key"]
+        itype = item["type"]
+
+        if itype == "toggle":
+            new_val = not bool(item["value"])
+            self._save_config_key(key, new_val, item["label"])
+        elif itype == "choice":
+            choices = item.get("choices", [])
+            if not choices:
+                return
+            cur = str(item["value"]).lower()
+            try:
+                idx = choices.index(cur)
+            except ValueError:
+                idx = 0
+            step = 1 if forward else -1
+            new_idx = (idx + step) % len(choices)
+            new_val = choices[new_idx]
+            self._save_config_key(key, new_val, item["label"])
+        elif itype == "text":
+            self.handle_edit_config()
+
+    def handle_edit_config(self) -> None:
+        """Enter inline editing mode for text configuration fields."""
+        items = self._get_config_items()
+        if not (0 <= self.config_cursor < len(items)):
+            return
+        item = items[self.config_cursor]
+        if item["type"] == "text":
+            self.config_editing = True
+            self.config_edit_value = str(item["value"])
+            self.config_edit_cursor = len(self.config_edit_value)
+            self.config_status_message = f"Editing {item['label']}: press Enter to save, Esc to cancel"
+            self.notify()
+        else:
+            self.handle_cycle_config(forward=True)
+
+    def _save_config_key(self, key: str, value: Any, label: str) -> None:
+        """Save a setting to Config and update runtime state."""
+        try:
+            self.config.set_key(key, value)
+            if key == "theme":
+                self.theme_mode = str(value)
+                if self.on_theme_change:
+                    self.on_theme_change(self.theme_mode)
+            display_val = "✓ enabled" if value is True else ("✗ disabled" if value is False else str(value))
+            self.config_status_message = f"✓ Saved: {label} → {display_val}"
+            self.notify()
+        except Exception as e:
+            self.config_status_message = f"Failed to save setting: {e}"
+            self.notify()
+
+    def handle_left(self) -> None:
+        """Handle left arrow key in non-typing phases."""
+        if self.phase == TUIPhase.CONFIG and not self.config_editing:
+            self.handle_cycle_config(forward=False)
+
+    def handle_right(self) -> None:
+        """Handle right arrow key in non-typing phases."""
+        if self.phase == TUIPhase.CONFIG and not self.config_editing:
+            self.handle_cycle_config(forward=True)
 
     def open_library(self, rescan: bool = True) -> None:
         """Switch to the library view."""
@@ -936,6 +1149,10 @@ class ZoinKTUI:
                 self.library_cursor -= 1
                 if self.library_cursor < self.library_scroll_offset:
                     self.library_scroll_offset = self.library_cursor
+        elif self.phase == TUIPhase.CONFIG:
+            if not self.config_editing:
+                if self.config_cursor > 0:
+                    self.config_cursor -= 1
         self.notify()
 
     def handle_down(self) -> None:
@@ -962,6 +1179,10 @@ class ZoinKTUI:
                 max_vis = 8
                 if self.library_cursor >= self.library_scroll_offset + max_vis:
                     self.library_scroll_offset = self.library_cursor - max_vis + 1
+        elif self.phase == TUIPhase.CONFIG:
+            if not self.config_editing:
+                if self.config_cursor < len(self._get_config_items()) - 1:
+                    self.config_cursor += 1
         self.notify()
 
     def handle_enter(self) -> None:
@@ -983,6 +1204,25 @@ class ZoinKTUI:
                 self.handle_inspect()
         elif self.phase == TUIPhase.LIBRARY_DETAIL:
             self.handle_play()
+        elif self.phase == TUIPhase.CONFIG:
+            if self.config_editing:
+                items = self._get_config_items()
+                if 0 <= self.config_cursor < len(items):
+                    item = items[self.config_cursor]
+                    new_val = self.config_edit_value.strip()
+                    if item["key"] == "user_name" and not new_val:
+                        new_val = "Music Lover"
+                    self._save_config_key(item["key"], new_val, item["label"])
+                self.config_editing = False
+                self.notify()
+            else:
+                items = self._get_config_items()
+                if 0 <= self.config_cursor < len(items):
+                    item = items[self.config_cursor]
+                    if item["type"] == "text":
+                        self.handle_edit_config()
+                    else:
+                        self.handle_cycle_config(forward=True)
         elif self.phase in (TUIPhase.DONE, TUIPhase.ERROR, TUIPhase.HELP):
             self.go_home()
 
@@ -999,6 +1239,13 @@ class ZoinKTUI:
             self.notify()
         elif self.phase == TUIPhase.HELP:
             self.go_home()
+        elif self.phase == TUIPhase.CONFIG:
+            if self.config_editing:
+                self.config_editing = False
+                self.config_status_message = "Cancelled editing."
+                self.notify()
+            else:
+                self.go_home()
         elif self.phase == TUIPhase.SEARCH_RESULTS:
             self.go_home()
         elif self.phase == TUIPhase.PICKING:
@@ -1027,6 +1274,9 @@ class ZoinKTUI:
             self.notify()
         elif self.phase in (TUIPhase.LIBRARY, TUIPhase.LIBRARY_DETAIL):
             self.handle_play()
+        elif self.phase == TUIPhase.CONFIG:
+            if not self.config_editing:
+                self.handle_cycle_config(forward=True)
 
     def handle_album_action(self) -> None:
         """Resolve and open album for the currently selected track."""
@@ -1114,6 +1364,12 @@ class ZoinKTUI:
         elif self.phase == TUIPhase.HELP:
             content_lines = self._render_help_screen(width)
             footer_hints = [("↵/esc", "home"), ("^c", "quit")]
+        elif self.phase == TUIPhase.CONFIG:
+            content_lines = self._render_config_screen(width)
+            if self.config_editing:
+                footer_hints = [("↵", "save"), ("esc", "cancel"), ("^w", "del word")]
+            else:
+                footer_hints = [("↑↓", "select"), ("↵/space", "change"), ("e", "edit text"), ("esc", "home"), ("^c", "quit")]
         else:
             content_lines = [("class:muted", "unknown state\n")]
             footer_hints = [("^c", "quit")]
@@ -1906,6 +2162,112 @@ class ZoinKTUI:
 
         out.append(("class:border", pad_x + "╰" + "─" * (box_w - 2) + "╯\n"))
         return out
+
+    def _render_config_screen(self, width: int) -> list[tuple]:
+        out: list[tuple] = []
+        box_w = min(width - 4, 76)
+        pad_x = " " * max(0, (width - box_w) // 2)
+        inner_w = box_w - 4
+
+        header = "ZoinK Settings & Preferences"
+        head_pad = " " * max(0, (width - len(header)) // 2)
+        out.append(("", head_pad))
+        out.append(("class:primary", header + "\n\n"))
+
+        out.append(("class:border", pad_x + "╭─ configuration " + "─" * max(0, box_w - 19) + "╮\n"))
+
+        if self.config_status_message:
+            st_style = "class:badge" if self.config_status_message.startswith("✓") else "class:error"
+            st_text = f" {self.config_status_message} "
+            out.append((st_style, f"{pad_x}│ {st_text:<{inner_w}} │\n"))
+            out.append(("class:border", f"{pad_x}│" + "─" * (box_w - 2) + "│\n"))
+
+        items = self._get_config_items()
+        for i, it in enumerate(items):
+            is_sel = (i == self.config_cursor)
+            label = it["label"]
+            itype = it["type"]
+            val = it["value"]
+
+            prefix = " > " if is_sel else "   "
+            line_style = "class:choice.selected" if is_sel else "class:secondary"
+
+            if is_sel and self.config_editing:
+                cur_pos = self.config_edit_cursor
+                v_left = self.config_edit_value[:cur_pos]
+                v_right = self.config_edit_value[cur_pos:]
+                val_disp = f"[ {v_left}▌{v_right} ]"
+                desc_line = "Type new value · Enter save · Esc cancel"
+            else:
+                if itype == "toggle":
+                    val_disp = "[ ✓ enabled ]" if val else "[ ✗ disabled ]"
+                elif itype == "choice":
+                    choices_hint = " · ".join(it.get("choices", []))
+                    val_disp = f"[ {val} ]  ({choices_hint})"
+                else:
+                    val_str = str(val)
+                    if len(val_str) > 28:
+                        val_str = "..." + val_str[-25:]
+                    val_disp = f"[ {val_str} ]"
+                desc_line = it["desc"]
+
+            handler = self._click_handler(lambda idx=i: self._select_config_index(idx))
+
+            row_str = f"{prefix}{label:<18} {val_disp}"
+            out.append((line_style, f"{pad_x}│ {row_str:<{inner_w}} │\n", handler))
+
+            sub_style = "class:primary" if is_sel else "class:muted"
+            sub_str = f"      └ {desc_line}"
+            out.append((sub_style, f"{pad_x}│ {sub_str:<{inner_w}} │\n", handler))
+
+            if i < len(items) - 1:
+                out.append(("class:border", f"{pad_x}│" + " " * (box_w - 2) + "│\n"))
+
+        out.append(("class:border", f"{pad_x}│" + "─" * (box_w - 2) + "│\n"))
+
+        if self.config_editing:
+            save_btn = " [ ↵ save ] "
+            cancel_btn = " [ esc cancel ] "
+            h_save = self._click_handler(self.handle_enter)
+            h_cancel = self._click_handler(self.handle_escape)
+            btns = f"{save_btn}  {cancel_btn}"
+            pad_btn = " " * max(0, (inner_w - len(btns)) // 2)
+            out.append(("class:border", f"{pad_x}│ {pad_btn}"))
+            out.append(("class:button.zoink", save_btn, h_save))
+            out.append(("", "  "))
+            out.append(("class:button.secondary", cancel_btn, h_cancel))
+            rem = max(0, inner_w - len(pad_btn) - len(btns))
+            out.append(("class:border", " " * rem + " │\n"))
+        else:
+            chg_btn = " [ ↵ / space change ] "
+            edit_btn = " [ e edit ] "
+            home_btn = " [ esc back to home ] "
+            h_chg = self._click_handler(lambda: self.handle_cycle_config(True))
+            h_edit = self._click_handler(self.handle_edit_config)
+            h_home = self._click_handler(self.go_home)
+            btns = f"{chg_btn}  {edit_btn}  {home_btn}"
+            pad_btn = " " * max(0, (inner_w - len(btns)) // 2)
+            out.append(("class:border", f"{pad_x}│ {pad_btn}"))
+            out.append(("class:button.zoink", chg_btn, h_chg))
+            out.append(("", "  "))
+            out.append(("class:button.secondary", edit_btn, h_edit))
+            out.append(("", "  "))
+            out.append(("class:button.secondary", home_btn, h_home))
+            rem = max(0, inner_w - len(pad_btn) - len(btns))
+            out.append(("class:border", " " * rem + " │\n"))
+
+        out.append(("class:border", pad_x + "╰" + "─" * (box_w - 2) + "╯\n"))
+        return out
+
+    def _select_config_index(self, idx: int) -> None:
+        items = self._get_config_items()
+        if 0 <= idx < len(items):
+            if self.config_cursor == idx:
+                self.handle_cycle_config(forward=True)
+            else:
+                self.config_cursor = idx
+                self.config_editing = False
+                self.notify()
 
     def _select_library_index(self, idx: int) -> None:
         if 0 <= idx < len(self.library_tracks):

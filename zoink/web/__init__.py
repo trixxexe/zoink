@@ -18,7 +18,7 @@ from typing import Optional
 
 from flask import Flask, Response, abort, jsonify, request, send_from_directory
 
-from zoink.config import Config
+from zoink.config import Config, DEFAULTS
 from zoink.downloader import DownloadJob, DownloadManager, DownloadState
 from zoink.library import Library
 from zoink.provider import TrackResult
@@ -350,6 +350,28 @@ def api_library_rescan():
     lib = _get_library()
     added = lib.scan_directory(prune=True)
     return jsonify({"scanned": added, "total": lib.count()})
+
+
+@app.route("/api/config", methods=["GET", "POST"])
+def api_config():
+    cfg = _get_config()
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        for k, v in data.items():
+            if k in DEFAULTS and k not in ("download_dir",):
+                cfg.set_key(k, v)
+    return jsonify({
+        "user_name": cfg.user_name,
+        "output_format": cfg.output_format,
+        "quality": cfg.quality,
+        "theme": cfg.get_value("theme", "default"),
+        "download_dir": str(cfg.download_dir),
+        "server_lan": cfg.server_lan,
+        "server_port": cfg.server_port,
+        "embed_artwork": cfg.embed_artwork,
+        "embed_lyrics": cfg.embed_lyrics,
+        "duplicate_handling": cfg.duplicate_handling,
+    })
 
 
 # ---------------------------------------------------------------------------

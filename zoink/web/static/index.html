@@ -746,7 +746,8 @@
       libFilter: "all",
       isLyricsOpen: false,
       lyricsList: [],
-      isTranscodeFallback: false
+      isTranscodeFallback: false,
+      userName: "Music Lover"
     };
 
     const audio = document.getElementById("audio-player");
@@ -1132,15 +1133,19 @@
     // Real Data Fetcher
     async function loadLibraryData() {
       try {
-        const [resTracks, resAlbums, resRecent] = await Promise.all([
+        const [resTracks, resAlbums, resRecent, resConfig] = await Promise.all([
           fetch("/api/tracks").then(r => r.ok ? r.json() : []),
           fetch("/api/albums").then(r => r.ok ? r.json() : []),
-          fetch("/api/recent").then(r => r.ok ? r.json() : [])
+          fetch("/api/recent").then(r => r.ok ? r.json() : []),
+          fetch("/api/config").then(r => r.ok ? r.json() : {}).catch(() => ({}))
         ]);
 
         state.tracks = Array.isArray(resTracks) ? resTracks : [];
         state.albums = Array.isArray(resAlbums) ? resAlbums : [];
         state.recent = Array.isArray(resRecent) ? resRecent : [];
+        if (resConfig && resConfig.user_name) {
+          state.userName = resConfig.user_name;
+        }
 
         document.getElementById("lib-count-status").innerText = `${state.tracks.length} tracks indexed`;
 
@@ -1169,7 +1174,28 @@
     function renderHomeTab() {
       const hour = new Date().getHours();
       const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-      document.getElementById("greeting-text").innerText = `${greeting}, Music Lover`;
+      const userName = state.userName || "Music Lover";
+      const elGreeting = document.getElementById("greeting-text");
+      elGreeting.innerText = `${greeting}, ${userName}`;
+      elGreeting.title = "Click to change your display name";
+      elGreeting.classList.add("cursor-pointer", "hover:text-[var(--accent)]", "transition-colors");
+      elGreeting.onclick = async () => {
+        const entered = prompt("Enter your display name:", state.userName || "Music Lover");
+        if (entered !== null && entered.trim()) {
+          const newName = entered.trim();
+          state.userName = newName;
+          elGreeting.innerText = `${greeting}, ${newName}`;
+          try {
+            await fetch("/api/config", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ user_name: newName })
+            });
+          } catch (e) {
+            console.error("Failed to save display name:", e);
+          }
+        }
+      };
 
       const emptyState = document.getElementById("home-empty-state");
       const quickSection = document.getElementById("quick-jump-section");

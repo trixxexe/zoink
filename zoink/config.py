@@ -72,6 +72,7 @@ DEFAULTS: dict[str, Any] = {
     "server_lan": False,
     "theme": "default",
     "log_level": "normal",
+    "user_name": "Music Lover",
 }
 
 
@@ -193,3 +194,8 @@ class Config:
     @property
     def duplicate_handling(self) -> str:
         return str(self._data.get("duplicate_handling", "skip"))
+
+    @property
+    def user_name(self) -> str:
+        return str(self._data.get("user_name", "Music Lover"))
+

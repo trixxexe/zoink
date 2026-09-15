@@ -818,3 +818,49 @@ def test_library_delete_confirmation_flow(tui_instance, tmp_path):
     assert len(tui.library_tracks) == 0
 
 
+def test_tui_config_screen_interaction(tui_instance):
+    tui = tui_instance
+    cfg = tui.config
+
+    # 1. Open config via slash command
+    tui.insert_text("/config")
+    tui.handle_enter()
+    assert tui.phase == TUIPhase.CONFIG
+    assert tui.config_cursor == 0
+
+    # 2. Check items
+    items = tui._get_config_items()
+    assert len(items) >= 8
+    assert items[0]["key"] == "user_name"
+    assert items[0]["label"] == "Web Player Name"
+
+    # 3. Edit user_name
+    tui.handle_edit_config()
+    assert tui.config_editing is True
+    tui.config_edit_value = ""
+    tui.config_edit_cursor = 0
+    tui.insert_text("Custom Listener")
+    tui.handle_enter()
+    assert tui.config_editing is False
+    assert cfg.user_name == "Custom Listener"
+    assert "Custom Listener" in tui.config_status_message
+
+    # 4. Navigate to Audio Format and cycle choice
+    tui.handle_down()
+    assert tui.config_cursor == 1
+    orig_fmt = cfg.output_format
+    tui.handle_space()
+    assert cfg.output_format != orig_fmt
+
+    # 5. Render screen
+    rendered = tui.render(80, 24)
+    text = "".join(chunk[1] for chunk in rendered)
+    assert "Settings & Preferences" in text
+    assert "Custom Listener" in text
+
+    # 6. Escape back to home
+    tui.handle_escape()
+    assert tui.phase == TUIPhase.INPUT
+
+
+

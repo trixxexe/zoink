@@ -108,141 +108,162 @@ def run_tui(no_clear: bool = False, non_interactive: bool = False) -> None:
     )
 
     kb = KeyBindings()
-    is_input_phase = Condition(lambda: tui.phase == TUIPhase.INPUT)
-    not_input_phase = Condition(lambda: tui.phase != TUIPhase.INPUT)
+    is_typing_active = Condition(
+        lambda: tui.phase == TUIPhase.INPUT
+        or (tui.phase == TUIPhase.CONFIG and getattr(tui, "config_editing", False))
+    )
+    not_typing_active = Condition(
+        lambda: not (
+            tui.phase == TUIPhase.INPUT
+            or (tui.phase == TUIPhase.CONFIG and getattr(tui, "config_editing", False))
+        )
+    )
 
-    # --- INPUT PHASE KEYBINDINGS ---
-    @kb.add("<any>", filter=is_input_phase)
+    # --- TEXT ENTRY KEYBINDINGS (INPUT OR INLINE CONFIG EDITING) ---
+    @kb.add("<any>", filter=is_typing_active)
     def _input_char(event):
         if event.data:
             tui.insert_text(event.data)
 
-    @kb.add("up", filter=is_input_phase)
+    @kb.add("up", filter=is_typing_active)
     def _input_up(event):
-        if tui.command_suggestions:
+        if tui.phase == TUIPhase.INPUT and tui.command_suggestions:
             tui.handle_up()
 
-    @kb.add("down", filter=is_input_phase)
+    @kb.add("down", filter=is_typing_active)
     def _input_down(event):
-        if tui.command_suggestions:
+        if tui.phase == TUIPhase.INPUT and tui.command_suggestions:
             tui.handle_down()
 
-    @kb.add("tab", filter=is_input_phase)
+    @kb.add("tab", filter=is_typing_active)
     def _input_tab(event):
-        if tui.command_suggestions:
+        if tui.phase == TUIPhase.INPUT and tui.command_suggestions:
             tui.handle_tab()
 
-    @kb.add("backspace", filter=is_input_phase)
+    @kb.add("backspace", filter=is_typing_active)
     def _input_backspace(event):
         tui.delete_backwards()
 
-    @kb.add("delete", filter=is_input_phase)
+    @kb.add("delete", filter=is_typing_active)
     def _input_delete(event):
         tui.delete_forwards()
 
-    @kb.add("left", filter=is_input_phase)
+    @kb.add("left", filter=is_typing_active)
     def _input_left(event):
         tui.move_cursor_left()
 
-    @kb.add("right", filter=is_input_phase)
+    @kb.add("right", filter=is_typing_active)
     def _input_right(event):
         tui.move_cursor_right()
 
-    @kb.add("home", filter=is_input_phase)
-    @kb.add("c-a", filter=is_input_phase)
+    @kb.add("home", filter=is_typing_active)
+    @kb.add("c-a", filter=is_typing_active)
     def _input_home(event):
         tui.move_cursor_home()
 
-    @kb.add("end", filter=is_input_phase)
-    @kb.add("c-e", filter=is_input_phase)
+    @kb.add("end", filter=is_typing_active)
+    @kb.add("c-e", filter=is_typing_active)
     def _input_end(event):
         tui.move_cursor_end()
 
-    @kb.add("c-u", filter=is_input_phase)
+    @kb.add("c-u", filter=is_typing_active)
     def _input_clear(event):
         tui.clear_input()
 
-    @kb.add("c-w", filter=is_input_phase)
+    @kb.add("c-w", filter=is_typing_active)
     def _input_del_word(event):
         tui.delete_word_backwards()
 
-    # --- NON-INPUT NAVIGATION & CONTROLS KEYBINDINGS ---
-    @kb.add("up", filter=not_input_phase)
-    @kb.add("k", filter=not_input_phase)
+    # --- NON-TYPING NAVIGATION & CONTROLS KEYBINDINGS ---
+    @kb.add("up", filter=not_typing_active)
+    @kb.add("k", filter=not_typing_active)
     def _up(event):
         tui.handle_up()
 
-    @kb.add("down", filter=not_input_phase)
-    @kb.add("j", filter=not_input_phase)
+    @kb.add("down", filter=not_typing_active)
+    @kb.add("j", filter=not_typing_active)
     def _down(event):
         tui.handle_down()
 
-    @kb.add("pageup", filter=not_input_phase)
+    @kb.add("left", filter=not_typing_active)
+    def _left_nav(event):
+        tui.handle_left()
+
+    @kb.add("right", filter=not_typing_active)
+    def _right_nav(event):
+        tui.handle_right()
+
+    @kb.add("e", filter=not_typing_active)
+    def _edit(event):
+        if tui.phase == TUIPhase.CONFIG:
+            tui.handle_edit_config()
+
+    @kb.add("pageup", filter=not_typing_active)
     def _page_up(event):
         tui.handle_page_up()
 
-    @kb.add("pagedown", filter=not_input_phase)
+    @kb.add("pagedown", filter=not_typing_active)
     def _page_down(event):
         tui.handle_page_down()
 
-    @kb.add("space", filter=not_input_phase)
+    @kb.add("space", filter=not_typing_active)
     def _space(event):
         tui.handle_space()
 
-    @kb.add("p", filter=not_input_phase)
+    @kb.add("p", filter=not_typing_active)
     def _play(event):
         tui.handle_play()
 
-    @kb.add("s", filter=not_input_phase)
+    @kb.add("s", filter=not_typing_active)
     def _stop_or_search(event):
         if tui.phase in (TUIPhase.LIBRARY, TUIPhase.LIBRARY_DETAIL):
             tui.handle_stop()
         else:
             tui.go_home()
 
-    @kb.add("d", filter=not_input_phase)
+    @kb.add("d", filter=not_typing_active)
     def _delete(event):
         tui.handle_delete()
 
-    @kb.add("y", filter=not_input_phase)
+    @kb.add("y", filter=not_typing_active)
     def _confirm_yes(event):
         if tui.confirm_delete_id:
             tui.handle_confirm_yes()
 
-    @kb.add("n", filter=not_input_phase)
+    @kb.add("n", filter=not_typing_active)
     def _confirm_no(event):
         if tui.confirm_delete_id:
             tui.handle_confirm_no()
 
-    @kb.add("r", filter=not_input_phase)
+    @kb.add("r", filter=not_typing_active)
     def _rescan(event):
         tui.handle_rescan()
 
-    @kb.add("o", filter=not_input_phase)
+    @kb.add("o", filter=not_typing_active)
     def _sort(event):
         tui.handle_sort()
 
-    @kb.add("i", filter=not_input_phase)
+    @kb.add("i", filter=not_typing_active)
     def _inspect(event):
         tui.handle_inspect()
 
-    @kb.add("?", filter=not_input_phase)
+    @kb.add("?", filter=not_typing_active)
     def _help(event):
         tui.open_help()
 
-    @kb.add("a", filter=not_input_phase)
+    @kb.add("a", filter=not_typing_active)
     def _album(event):
         tui.handle_album_action()
 
-    @kb.add("A", filter=not_input_phase)
+    @kb.add("A", filter=not_typing_active)
     def _album_all(event):
         tui._select_all_album()
 
-    @kb.add("w", filter=not_input_phase)
+    @kb.add("w", filter=not_typing_active)
     def _web(event):
         tui.open_web_player()
 
-    @kb.add("/", filter=not_input_phase)
+    @kb.add("/", filter=not_typing_active)
     def _search_slash(event):
         tui.go_home()
         tui.insert_text("/")
@@ -263,7 +284,7 @@ def run_tui(no_clear: bool = False, non_interactive: bool = False) -> None:
         else:
             tui.open_library()
 
-    @kb.add("l", filter=not_input_phase)
+    @kb.add("l", filter=not_typing_active)
     def _library_non_input(event):
         if tui.phase in (TUIPhase.LIBRARY, TUIPhase.LIBRARY_DETAIL):
             tui.go_home()
@@ -274,9 +295,9 @@ def run_tui(no_clear: bool = False, non_interactive: bool = False) -> None:
     def _theme(event):
         tui.handle_cycle_theme()
 
-    @kb.add("q", filter=not_input_phase)
+    @kb.add("q", filter=not_typing_active)
     def _quit_non_input(event):
-        if tui.phase in (TUIPhase.DONE, TUIPhase.ERROR, TUIPhase.SEARCH_RESULTS, TUIPhase.LIBRARY, TUIPhase.LIBRARY_DETAIL, TUIPhase.HELP):
+        if tui.phase in (TUIPhase.DONE, TUIPhase.ERROR, TUIPhase.SEARCH_RESULTS, TUIPhase.LIBRARY, TUIPhase.LIBRARY_DETAIL, TUIPhase.HELP, TUIPhase.CONFIG):
             tui.go_home()
         else:
             safe_exit(0)

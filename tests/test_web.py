@@ -217,3 +217,21 @@ def test_web_only_shows_zoink_tracks(test_env):
     assert "External File" not in rec_titles
 
 
+def test_api_config_get_and_post(test_env):
+    cfg, _, client, _ = test_env
+    # 1. GET /api/config
+    res = client.get("/api/config")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert "user_name" in data
+    assert "output_format" in data
+
+    # 2. POST /api/config to update user_name
+    res_post = client.post("/api/config", json={"user_name": "Audiophile"})
+    assert res_post.status_code == 200
+    post_data = res_post.get_json()
+    assert post_data["user_name"] == "Audiophile"
+    assert cfg.user_name == "Audiophile"
+
+
+
