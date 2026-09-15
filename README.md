@@ -41,7 +41,7 @@ pkg install -y python ffmpeg git
 pkg install -y termux-api
 
 # 2. Clone repository and install
-git clone https://github.com/zoink-music/zoink.git
+git clone https://github.com/trixxexe/zoink.git
 cd zoink
 pip install -e .
 zoink
@@ -55,7 +55,7 @@ sudo apt update
 sudo apt install -y python3 python3-pip ffmpeg git
 
 # 2. Clone repository and install
-git clone https://github.com/zoink-music/zoink.git
+git clone https://github.com/trixxexe/zoink.git
 cd zoink
 pip install -e .
 zoink
@@ -65,7 +65,7 @@ zoink
 
 ```bash
 sudo pacman -S python python-pip ffmpeg git
-git clone https://github.com/zoink-music/zoink.git
+git clone https://github.com/trixxexe/zoink.git
 cd zoink
 pip install -e .
 zoink
@@ -174,6 +174,7 @@ Settings are stored in `~/.config/zoink/config.json`:
 | `filename_template` | `{artist}/{album}/{track} - {title}.{ext}` | Custom naming scheme for output files. |
 | `duplicate_handling` | `skip` | `skip`, `overwrite`, or `rename`. |
 | `theme` | `auto` | `auto`, `dark`, `amoled`, `light`. |
+| `user_name` | `Music Lover` | Custom display name shown in web player greetings and editable via `/config`. |
 
 ---
 
