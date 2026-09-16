@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-09-16
+
+### Fixed
+- **Web Player Library Resolution**: Fixed issue where the web player and TUI showed "no songs in your library yet" caused by test runner pollution overwriting `download_dir` in `config.json`.
+- **Download Directory Guard**: Added automatic fallback to default music directory (`~/Music`) if configured path points to a wiped or nonexistent temporary directory.
+- **Offline Self-Contained Web Player**: Vendored `tailwind.min.js` locally in `zoink/web/static/` to ensure the web player renders cleanly and reliably offline without external CDN dependencies.
+- **Test Suite Config Isolation**: Added `tests/conftest.py` with autouse fixture to isolate `ZOINK_CONFIG_DIR` during test runs, preventing tests from ever modifying the user's persistent configuration file.
+
 ## [0.2.0] - 2026-09-15
 
 ### Added

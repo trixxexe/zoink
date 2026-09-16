@@ -3,8 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>ZoinK — AMOLED Music Stream & Player</title>
-  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <script src="/static/tailwind.min.js"></script>
+  <script>
+    if (!window.tailwind) {
+      document.write('<script src="https://cdn.tailwindcss.com"><\/script>');
+    }
+  </script>
   <style>
     :root {
       --bg-base: #000000;
@@ -137,7 +141,7 @@
           </div>
           <div>
             <span class="font-bold tracking-tight text-lg text-[var(--text-primary)]">ZoinK</span>
-            <span class="text-[10px] text-[var(--accent)] font-mono ml-1.5 px-1.5 py-0.5 rounded bg-[var(--accent-dim)] border border-[var(--accent)]">v0.1.0</span>
+            <span class="text-[10px] text-[var(--accent)] font-mono ml-1.5 px-1.5 py-0.5 rounded bg-[var(--accent-dim)] border border-[var(--accent)]">v0.2.0</span>
           </div>
         </div>
         <button onclick="openSettingsModal()" title="Theme & Preferences" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1.5 rounded-lg hover:bg-[var(--bg-surface-elevated)] transition">

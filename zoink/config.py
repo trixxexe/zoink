@@ -50,11 +50,33 @@ def _default_output_dir() -> Path:
     return home / "Music"
 
 
-CONFIG_DIR = Path(
-    os.environ.get("ZOINK_CONFIG_DIR")
-    or (Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / APP_NAME)
-)
+def _default_config_dir() -> Path:
+    env = os.environ.get("ZOINK_CONFIG_DIR")
+    if env:
+        return Path(env).expanduser().resolve()
+    return (Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / APP_NAME).resolve()
+
+
+CONFIG_DIR = _default_config_dir()
 CONFIG_FILE = CONFIG_DIR / "config.json"
+
+
+def get_config_dir() -> Path:
+    if CONFIG_FILE != (CONFIG_DIR / "config.json"):
+        return CONFIG_FILE.parent
+    env = os.environ.get("ZOINK_CONFIG_DIR")
+    if env:
+        return Path(env).expanduser().resolve()
+    return CONFIG_DIR
+
+
+def get_config_file() -> Path:
+    if CONFIG_FILE != (CONFIG_DIR / "config.json"):
+        return CONFIG_FILE
+    env = os.environ.get("ZOINK_CONFIG_DIR")
+    if env:
+        return Path(env).expanduser().resolve() / "config.json"
+    return CONFIG_FILE
 
 DEFAULTS: dict[str, Any] = {
     "download_dir": "",
@@ -93,17 +115,20 @@ class Config:
         return cls._instance
 
     def _load(self) -> None:
-        if CONFIG_FILE.exists():
+        cfg_file = get_config_file()
+        if cfg_file.exists():
             try:
-                with CONFIG_FILE.open("r", encoding="utf-8") as f:
+                with cfg_file.open("r", encoding="utf-8") as f:
                     stored = json.load(f)
                 self._data.update(stored)
             except (json.JSONDecodeError, OSError):
                 pass
 
     def save(self) -> None:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        with CONFIG_FILE.open("w", encoding="utf-8") as f:
+        cfg_dir = get_config_dir()
+        cfg_file = get_config_file()
+        cfg_dir.mkdir(parents=True, exist_ok=True)
+        with cfg_file.open("w", encoding="utf-8") as f:
             json.dump(self._data, f, indent=2, ensure_ascii=False)
 
     def __getitem__(self, key: str) -> Any:
@@ -138,9 +163,21 @@ class Config:
 
     @property
     def download_dir(self) -> Path:
-        d = self._data["download_dir"]
+        d = self._data.get("download_dir", "")
         if d:
-            return Path(d).expanduser().resolve()
+            p = Path(d).expanduser().resolve()
+            if p.exists():
+                return p
+            # Guard against temporary paths that were wiped or leaked from tests
+            default_dir = _default_output_dir()
+            if "/tmp" in str(p) or "\\tmp" in str(p) or default_dir.exists():
+                return default_dir
+            # Attempt creating the directory if it's a valid persistent path
+            try:
+                p.mkdir(parents=True, exist_ok=True)
+                return p
+            except OSError:
+                return default_dir
         return _default_output_dir()
 
     @property
