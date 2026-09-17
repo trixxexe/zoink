@@ -235,9 +235,17 @@ def run_tui(no_clear: bool = False, non_interactive: bool = False) -> None:
         if tui.confirm_delete_id:
             tui.handle_confirm_no()
 
+    @kb.add("c", filter=not_typing_active)
+    def _convert(event):
+        if tui.phase in (TUIPhase.LIBRARY, TUIPhase.LIBRARY_DETAIL):
+            tui.open_convert()
+
     @kb.add("r", filter=not_typing_active)
     def _rescan(event):
-        tui.handle_rescan()
+        if tui.phase == TUIPhase.CONVERT:
+            tui.handle_toggle_convert_replace()
+        else:
+            tui.handle_rescan()
 
     @kb.add("o", filter=not_typing_active)
     def _sort(event):
@@ -297,7 +305,7 @@ def run_tui(no_clear: bool = False, non_interactive: bool = False) -> None:
 
     @kb.add("q", filter=not_typing_active)
     def _quit_non_input(event):
-        if tui.phase in (TUIPhase.DONE, TUIPhase.ERROR, TUIPhase.SEARCH_RESULTS, TUIPhase.LIBRARY, TUIPhase.LIBRARY_DETAIL, TUIPhase.HELP, TUIPhase.CONFIG):
+        if tui.phase in (TUIPhase.DONE, TUIPhase.ERROR, TUIPhase.SEARCH_RESULTS, TUIPhase.LIBRARY, TUIPhase.LIBRARY_DETAIL, TUIPhase.HELP, TUIPhase.CONFIG, TUIPhase.CONVERT):
             tui.go_home()
         else:
             safe_exit(0)

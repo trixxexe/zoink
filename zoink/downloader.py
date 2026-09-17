@@ -46,6 +46,8 @@ class DownloadJob:
     speed: float = 0.0
     eta: int = 0
     status_text: str = ""
+    output_format: Optional[str] = None
+    quality: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -62,6 +64,8 @@ class DownloadJob:
             "speed": self.speed,
             "eta": self.eta,
             "status_text": self.status_text,
+            "format": self.output_format,
+            "quality": self.quality,
         }
 
 
@@ -118,12 +122,18 @@ class DownloadManager:
         self,
         track: TrackResult,
         on_progress: Optional[Callable[[DownloadJob], None]] = None,
+        output_format: Optional[str] = None,
+        quality: Optional[str] = None,
     ) -> DownloadJob:
         """Download a single track synchronously. Returns completed job."""
         with self._lock:
             self._cancelled = False
             self._cancelled_jobs.discard(track.id)
-            job = DownloadJob(track=track)
+            job = DownloadJob(
+                track=track,
+                output_format=output_format or self.config.output_format,
+                quality=quality or self.config.quality,
+            )
             self._active_jobs[track.id] = job
 
         try:
@@ -139,6 +149,8 @@ class DownloadManager:
         tracks: list[TrackResult],
         on_progress: Optional[Callable[[DownloadJob], None]] = None,
         on_complete: Optional[Callable[[DownloadJob], None]] = None,
+        output_format: Optional[str] = None,
+        quality: Optional[str] = None,
     ) -> list[DownloadJob]:
         """Download multiple tracks concurrently."""
         self._cancelled = False
@@ -147,7 +159,11 @@ class DownloadManager:
         with self._lock:
             for t in tracks:
                 self._cancelled_jobs.discard(t.id)
-                job = DownloadJob(track=t)
+                job = DownloadJob(
+                    track=t,
+                    output_format=output_format or self.config.output_format,
+                    quality=quality or self.config.quality,
+                )
                 jobs.append(job)
                 self._active_jobs[t.id] = job
 
@@ -175,9 +191,9 @@ class DownloadManager:
                     self._completed_jobs.append(job)
         return jobs
 
-    def resolve_target_path(self, track: TrackResult) -> Path:
+    def resolve_target_path(self, track: TrackResult, output_format: Optional[str] = None) -> Path:
         """Compute the target file path for a track based on configuration and duplicate rules."""
-        fmt = self.config.output_format.lower()
+        fmt = (output_format or self.config.output_format).lower().lstrip(".")
         outtmpl = _build_path(self.config.filename_template, track, fmt, self.config.download_dir)
         path = Path(outtmpl)
         dup_mode = self.config.get_value("duplicate_handling", "skip")
@@ -232,8 +248,8 @@ class DownloadManager:
         out_dir = cfg.download_dir
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        fmt = cfg.output_format.lower()
-        quality = cfg.quality
+        fmt = (job.output_format or cfg.output_format or "mp3").lower().lstrip(".")
+        quality = (job.quality or cfg.quality or "best").lower()
 
         # Determine target file path based on template
         outtmpl = _build_path(cfg.filename_template, job.track, fmt, out_dir)
@@ -408,12 +424,20 @@ class DownloadManager:
                 on_progress(job)
             return
 
-        # Locate converted audio file
+        # Locate converted audio file: prioritize exact target format match
         downloaded_file = None
         for f in tmp_dir.iterdir():
-            if f.is_file() and (f.suffix.lower() == f".{fmt}" or f.suffix.lower() in (".mp3", ".m4a", ".flac", ".opus", ".ogg")):
+            if f.is_file() and f.suffix.lower() == f".{fmt}":
                 downloaded_file = f
                 break
+
+        # If exact target format was not produced by yt-dlp, locate any audio file
+        if not downloaded_file:
+            for f in tmp_dir.iterdir():
+                if f.is_file() and f.suffix.lower() in (".mp3", ".m4a", ".flac", ".opus", ".ogg", ".aac", ".wav", ".webm"):
+                    downloaded_file = f
+                    break
+
         if not downloaded_file or not downloaded_file.exists():
             for f in tmp_dir.iterdir():
                 if f.is_file():
@@ -428,6 +452,21 @@ class DownloadManager:
             if on_progress:
                 on_progress(job)
             return
+
+        # If downloaded file is in a different format than requested, transcode via FFmpeg
+        if downloaded_file.suffix.lower() != f".{fmt}":
+            job.status_text = f"Transcoding to {fmt.upper()}..."
+            if on_progress:
+                on_progress(job)
+            transcoded_target = tmp_dir / f"transcoded.{fmt}"
+            from zoink.converter import run_ffmpeg_transcode
+            ok = run_ffmpeg_transcode(downloaded_file, transcoded_target, fmt, quality=quality)
+            if ok and transcoded_target.exists() and transcoded_target.stat().st_size > 0:
+                try:
+                    downloaded_file.unlink()
+                except OSError:
+                    pass
+                downloaded_file = transcoded_target
 
         # Verification of media integrity before finalization
         job.state = DownloadState.VERIFYING

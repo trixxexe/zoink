@@ -222,25 +222,22 @@ def test_tui_mouse_clicks(tui_instance):
 
 
 def test_tui_theme_cycling(tui_instance):
+    from zoink.tui.theme import THEME_MODES
     tui = tui_instance
     assert tui.theme_mode == "auto"
 
     theme_updates = []
     tui.on_theme_change = lambda m: theme_updates.append(m)
 
-    tui.handle_cycle_theme()
-    assert tui.theme_mode == "dark"
-    assert theme_updates == ["dark"]
+    expected_modes = ["dark", "amoled", "cyberpunk", "dracula", "nord", "emerald", "rose", "light", "auto"]
+    for expected in expected_modes:
+        tui.handle_cycle_theme()
+        assert tui.theme_mode == expected
 
-    tui.handle_cycle_theme()
-    assert tui.theme_mode == "light"
-    assert theme_updates == ["dark", "light"]
-
-    tui.handle_cycle_theme()
-    assert tui.theme_mode == "auto"
+    assert theme_updates == expected_modes
 
     # Ensure get_style works for each mode
-    for mode in ["auto", "dark", "light"]:
+    for mode in THEME_MODES:
         style = get_style(mode)
         assert style is not None
 
@@ -613,8 +610,9 @@ def test_slash_commands_popup_and_filtering(tui_instance):
     assert tui.command_suggestions == []
 
     # Typing '/' triggers suggestion list of all commands
+    from zoink.tui.app import SLASH_COMMANDS
     tui.insert_text("/")
-    assert len(tui.command_suggestions) == 7
+    assert len(tui.command_suggestions) == len(SLASH_COMMANDS)
     rendered = tui.render(80, 24)
     rendered_text = "".join(text for item in rendered for text in [item[1]])
     assert "commands" in rendered_text

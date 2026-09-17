@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-09-17
+
+### Added
+- **Audio Format Converter Tool**: Built-in audio conversion tool powered by FFmpeg allowing users to convert any track in their library into MP3, FLAC, M4A/AAC, Opus, OGG Vorbis, or WAV:
+  - **TUI Converter Screen**: Dedicated `TUIPhase.CONVERT` interface accessible via <kbd>c</kbd> in Library mode or `/convert` slash command with format picker, bitrate selector, and optional original file replacement.
+  - **Web Player Converter**: Interactive Convert modal accessible directly from library tracks and popular tracks list with real-time FFmpeg transcoding progress.
+  - **REST API Endpoints**: `POST /api/convert` and `GET /api/convert/formats` for remote conversion and format queries.
+  - **CLI Command**: `zoink convert <target> -f <format> [--quality <q>] [--keep]` for terminal-based batch/single conversions.
+  - **Tag & Artwork Preservation**: Retains all ID3, MP4, FLAC, and Vorbis tags, lyrics, and embedded album art across conversions with media container integrity verification.
+- **Extended Theme Palette (9 Themes)**:
+  - Added new themes across both TUI (`zoink/tui/theme.py`) and Web Player (`zoink/web/static/index.html`): `amoled`, `cyberpunk`, `dracula`, `nord`, `emerald`, `rose`, plus existing `auto`, `dark`, and `light`.
+  - Colorway buttons in the Web Player Settings modal and cycling in TUI via `/theme`, <kbd>Ctrl+T</kbd>, and `/config`.
+
+### Fixed
+- **Preferred Audio Format Respected**: Fixed an issue where downloads always defaulted to `.opus` files regardless of the configured preferred format. Resolved by:
+  - Dynamically positioning the user's preferred format as Choice #0 in the TUI format picker.
+  - Prioritizing exact target extension matching in `DownloadManager` before falling back to generic containers.
+  - Automatic FFmpeg transcoding fallback if yt-dlp yields a mismatched raw container.
+- **Metadata String Path Support**: `verify_audio_file`, `read_metadata`, and `embed_metadata` now accept both `str` and `Path` objects without throwing `AttributeError`.
+
 ## [0.2.1] - 2026-09-16
 
 ### Fixed

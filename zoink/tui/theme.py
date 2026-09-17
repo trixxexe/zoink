@@ -1,100 +1,313 @@
 """Visual Theme System for ZoinK TUI.
 
-Provides restrained, terminal-friendly palettes with auto/dark/light modes.
+Provides rich, distinct, terminal-friendly palettes with AMOLED, Cyberpunk,
+Dracula, Nord, Emerald, Rosé Pine, Dark, Light, and Auto modes.
 """
 
 from __future__ import annotations
 
 from prompt_toolkit.styles import Style
 
-THEME_MODES = ("auto", "dark", "light")
+THEME_MODES = (
+    "auto",
+    "dark",
+    "amoled",
+    "cyberpunk",
+    "dracula",
+    "nord",
+    "emerald",
+    "rose",
+    "light",
+)
 
 
 def get_style(mode: str = "auto") -> Style:
     """Return prompt_toolkit Style for the specified theme mode."""
+    mode = (mode or "auto").lower()
+
     if mode == "light":
         return Style.from_dict({
-            # Base text
             "primary": "#111827 bold",
             "secondary": "#374151",
             "muted": "#6b7280",
             "dim": "#9ca3af",
             "border": "#d1d5db",
             "border.focus": "#0284c7",
-            # Logo & Branding
             "logo": "#0284c7 bold",
             "tagline": "#4b5563 italic",
             "watermark": "#9ca3af",
-            # Controls & Inputs
             "input.frame": "#cbd5e1",
             "input.frame.focus": "#0284c7 bold",
             "input.text": "#0f172a bold",
             "input.cursor": "#ffffff bold bg:#0284c7",
             "input.placeholder": "#94a3b8 italic",
-            # Lists & Selection
             "choice.cursor": "#0284c7 bold",
             "choice.selected": "#0284c7 bold bg:#e0f2fe",
             "choice.item": "#1e293b",
             "choice.desc": "#64748b",
-            # Action Button
             "button.zoink": "#ffffff bold bg:#0284c7",
             "button.zoink.hover": "#ffffff bold bg:#0369a1",
             "button.secondary": "#334155 bg:#f1f5f9",
-            # Status & Progress
             "status.spinner": "#0284c7 bold",
             "progress.bar.filled": "#0284c7",
             "progress.bar.empty": "#e2e8f0",
             "progress.pct": "#0f172a bold",
             "progress.meta": "#64748b",
-            # Feedback
             "success": "#16a34a bold",
             "error": "#dc2626 bold",
             "badge": "#0369a1 bg:#f0f9ff",
-            # Footer
             "footer.key": "#0f172a bold",
             "footer.action": "#475569",
             "footer.sep": "#cbd5e1",
         })
 
+    elif mode == "amoled":
+        return Style.from_dict({
+            "primary": "#ffffff bold",
+            "secondary": "#a1a1aa",
+            "muted": "#71717a",
+            "dim": "#52525b",
+            "border": "#27272a",
+            "border.focus": "#00f2fe bold",
+            "logo": "#00f2fe bold",
+            "tagline": "#a1a1aa italic",
+            "watermark": "#52525b",
+            "input.frame": "#27272a",
+            "input.frame.focus": "#00f2fe bold",
+            "input.text": "#ffffff bold",
+            "input.cursor": "#000000 bold bg:#00f2fe",
+            "input.placeholder": "#52525b italic",
+            "choice.cursor": "#00f2fe bold",
+            "choice.selected": "#ffffff bold bg:#18181b",
+            "choice.item": "#e4e4e7",
+            "choice.desc": "#71717a",
+            "button.zoink": "#000000 bold bg:#00f2fe",
+            "button.zoink.hover": "#000000 bold bg:#38bdf8",
+            "button.secondary": "#e4e4e7 bg:#18181b",
+            "status.spinner": "#00f2fe bold",
+            "progress.bar.filled": "#00f2fe",
+            "progress.bar.empty": "#18181b",
+            "progress.pct": "#ffffff bold",
+            "progress.meta": "#71717a",
+            "success": "#10b981 bold",
+            "error": "#ef4444 bold",
+            "badge": "#00f2fe bg:#09090b",
+            "footer.key": "#ffffff bold",
+            "footer.action": "#71717a",
+            "footer.sep": "#27272a",
+        })
+
+    elif mode == "cyberpunk":
+        return Style.from_dict({
+            "primary": "#fcee0a bold",
+            "secondary": "#00f0ff",
+            "muted": "#797b8f",
+            "dim": "#494a5c",
+            "border": "#2b2b3d",
+            "border.focus": "#fcee0a bold",
+            "logo": "#fcee0a bold",
+            "tagline": "#ff0055 italic",
+            "watermark": "#494a5c",
+            "input.frame": "#2b2b3d",
+            "input.frame.focus": "#ff0055 bold",
+            "input.text": "#ffffff bold",
+            "input.cursor": "#0c0c14 bold bg:#fcee0a",
+            "input.placeholder": "#5b5d74 italic",
+            "choice.cursor": "#ff0055 bold",
+            "choice.selected": "#fcee0a bold bg:#221d30",
+            "choice.item": "#e0e0ee",
+            "choice.desc": "#898b9e",
+            "button.zoink": "#0c0c14 bold bg:#fcee0a",
+            "button.zoink.hover": "#ffffff bold bg:#ff0055",
+            "button.secondary": "#fcee0a bg:#221d30",
+            "status.spinner": "#ff0055 bold",
+            "progress.bar.filled": "#fcee0a",
+            "progress.bar.empty": "#1d1d28",
+            "progress.pct": "#00f0ff bold",
+            "progress.meta": "#797b8f",
+            "success": "#00ff9f bold",
+            "error": "#ff0055 bold",
+            "badge": "#ff0055 bg:#1a1728",
+            "footer.key": "#fcee0a bold",
+            "footer.action": "#797b8f",
+            "footer.sep": "#3b3b4f",
+        })
+
+    elif mode == "dracula":
+        return Style.from_dict({
+            "primary": "#f8f8f2 bold",
+            "secondary": "#f1fa8c",
+            "muted": "#6272a4",
+            "dim": "#44475a",
+            "border": "#44475a",
+            "border.focus": "#bd93f9 bold",
+            "logo": "#bd93f9 bold",
+            "tagline": "#ff79c6 italic",
+            "watermark": "#6272a4",
+            "input.frame": "#44475a",
+            "input.frame.focus": "#bd93f9 bold",
+            "input.text": "#f8f8f2 bold",
+            "input.cursor": "#282a36 bold bg:#bd93f9",
+            "input.placeholder": "#6272a4 italic",
+            "choice.cursor": "#ff79c6 bold",
+            "choice.selected": "#f8f8f2 bold bg:#44475a",
+            "choice.item": "#f8f8f2",
+            "choice.desc": "#6272a4",
+            "button.zoink": "#282a36 bold bg:#bd93f9",
+            "button.zoink.hover": "#282a36 bold bg:#ff79c6",
+            "button.secondary": "#f8f8f2 bg:#44475a",
+            "status.spinner": "#50fa7b bold",
+            "progress.bar.filled": "#bd93f9",
+            "progress.bar.empty": "#383a4c",
+            "progress.pct": "#50fa7b bold",
+            "progress.meta": "#6272a4",
+            "success": "#50fa7b bold",
+            "error": "#ff5555 bold",
+            "badge": "#bd93f9 bg:#383a4c",
+            "footer.key": "#bd93f9 bold",
+            "footer.action": "#6272a4",
+            "footer.sep": "#44475a",
+        })
+
+    elif mode == "nord":
+        return Style.from_dict({
+            "primary": "#eceff4 bold",
+            "secondary": "#d8dee9",
+            "muted": "#4c566a",
+            "dim": "#3b4252",
+            "border": "#3b4252",
+            "border.focus": "#88c0d0 bold",
+            "logo": "#88c0d0 bold",
+            "tagline": "#81a1c1 italic",
+            "watermark": "#4c566a",
+            "input.frame": "#3b4252",
+            "input.frame.focus": "#88c0d0 bold",
+            "input.text": "#eceff4 bold",
+            "input.cursor": "#2e3440 bold bg:#88c0d0",
+            "input.placeholder": "#4c566a italic",
+            "choice.cursor": "#88c0d0 bold",
+            "choice.selected": "#eceff4 bold bg:#3b4252",
+            "choice.item": "#e5e9f0",
+            "choice.desc": "#4c566a",
+            "button.zoink": "#2e3440 bold bg:#88c0d0",
+            "button.zoink.hover": "#2e3440 bold bg:#81a1c1",
+            "button.secondary": "#eceff4 bg:#3b4252",
+            "status.spinner": "#88c0d0 bold",
+            "progress.bar.filled": "#88c0d0",
+            "progress.bar.empty": "#3b4252",
+            "progress.pct": "#eceff4 bold",
+            "progress.meta": "#4c566a",
+            "success": "#a3be8c bold",
+            "error": "#bf616a bold",
+            "badge": "#88c0d0 bg:#2e3440",
+            "footer.key": "#88c0d0 bold",
+            "footer.action": "#4c566a",
+            "footer.sep": "#3b4252",
+        })
+
+    elif mode == "emerald":
+        return Style.from_dict({
+            "primary": "#e6fffa bold",
+            "secondary": "#a7f3d0",
+            "muted": "#4b7a66",
+            "dim": "#224233",
+            "border": "#1b3826",
+            "border.focus": "#10b981 bold",
+            "logo": "#10b981 bold",
+            "tagline": "#34d399 italic",
+            "watermark": "#224233",
+            "input.frame": "#1b3826",
+            "input.frame.focus": "#10b981 bold",
+            "input.text": "#ffffff bold",
+            "input.cursor": "#07120c bold bg:#10b981",
+            "input.placeholder": "#2f5c47 italic",
+            "choice.cursor": "#10b981 bold",
+            "choice.selected": "#e6fffa bold bg:#12281c",
+            "choice.item": "#d1fae5",
+            "choice.desc": "#4b7a66",
+            "button.zoink": "#07120c bold bg:#10b981",
+            "button.zoink.hover": "#07120c bold bg:#34d399",
+            "button.secondary": "#d1fae5 bg:#12281c",
+            "status.spinner": "#34d399 bold",
+            "progress.bar.filled": "#10b981",
+            "progress.bar.empty": "#12281c",
+            "progress.pct": "#34d399 bold",
+            "progress.meta": "#4b7a66",
+            "success": "#34d399 bold",
+            "error": "#f87171 bold",
+            "badge": "#10b981 bg:#07120c",
+            "footer.key": "#10b981 bold",
+            "footer.action": "#4b7a66",
+            "footer.sep": "#1b3826",
+        })
+
+    elif mode in ("rose", "sunset"):
+        return Style.from_dict({
+            "primary": "#e0def4 bold",
+            "secondary": "#f6c177",
+            "muted": "#6e6a86",
+            "dim": "#393552",
+            "border": "#26233a",
+            "border.focus": "#eb6f92 bold",
+            "logo": "#eb6f92 bold",
+            "tagline": "#f6c177 italic",
+            "watermark": "#524f67",
+            "input.frame": "#26233a",
+            "input.frame.focus": "#eb6f92 bold",
+            "input.text": "#e0def4 bold",
+            "input.cursor": "#191724 bold bg:#eb6f92",
+            "input.placeholder": "#6e6a86 italic",
+            "choice.cursor": "#eb6f92 bold",
+            "choice.selected": "#e0def4 bold bg:#2a283e",
+            "choice.item": "#e0def4",
+            "choice.desc": "#6e6a86",
+            "button.zoink": "#191724 bold bg:#eb6f92",
+            "button.zoink.hover": "#191724 bold bg:#f6c177",
+            "button.secondary": "#e0def4 bg:#2a283e",
+            "status.spinner": "#f6c177 bold",
+            "progress.bar.filled": "#eb6f92",
+            "progress.bar.empty": "#26233a",
+            "progress.pct": "#f6c177 bold",
+            "progress.meta": "#6e6a86",
+            "success": "#9ccfd8 bold",
+            "error": "#eb6f92 bold",
+            "badge": "#eb6f92 bg:#232136",
+            "footer.key": "#eb6f92 bold",
+            "footer.action": "#6e6a86",
+            "footer.sep": "#26233a",
+        })
+
     elif mode == "dark":
         return Style.from_dict({
-            # Base text
             "primary": "#f8fafc bold",
             "secondary": "#cbd5e1",
             "muted": "#94a3b8",
             "dim": "#64748b",
             "border": "#334155",
-            "border.focus": "#38bdf8",
-            # Logo & Branding
+            "border.focus": "#38bdf8 bold",
             "logo": "#38bdf8 bold",
             "tagline": "#94a3b8 italic",
             "watermark": "#64748b",
-            # Controls & Inputs
             "input.frame": "#334155",
             "input.frame.focus": "#38bdf8 bold",
             "input.text": "#ffffff bold",
             "input.cursor": "#0f172a bold bg:#38bdf8",
             "input.placeholder": "#64748b italic",
-            # Lists & Selection
             "choice.cursor": "#38bdf8 bold",
             "choice.selected": "#f8fafc bold bg:#1e293b",
             "choice.item": "#e2e8f0",
             "choice.desc": "#94a3b8",
-            # Action Button
             "button.zoink": "#0f172a bold bg:#38bdf8",
             "button.zoink.hover": "#0f172a bold bg:#7dd3fc",
             "button.secondary": "#cbd5e1 bg:#1e293b",
-            # Status & Progress
             "status.spinner": "#38bdf8 bold",
             "progress.bar.filled": "#38bdf8",
             "progress.bar.empty": "#1e293b",
             "progress.pct": "#f8fafc bold",
             "progress.meta": "#94a3b8",
-            # Feedback
             "success": "#4ade80 bold",
             "error": "#f87171 bold",
             "badge": "#38bdf8 bg:#0f172a",
-            # Footer
             "footer.key": "#f8fafc bold",
             "footer.action": "#94a3b8",
             "footer.sep": "#475569",
@@ -103,43 +316,35 @@ def get_style(mode: str = "auto") -> Style:
     else:
         # "auto" — uses terminal default foreground and background gracefully
         return Style.from_dict({
-            # Base text
             "primary": "bold",
             "secondary": "",
             "muted": "#888888",
             "dim": "#666666",
             "border": "#555555",
             "border.focus": "#00d7d7 bold",
-            # Logo & Branding
             "logo": "#00d7d7 bold",
             "tagline": "#888888 italic",
             "watermark": "#666666",
-            # Controls & Inputs
             "input.frame": "#555555",
             "input.frame.focus": "#00d7d7 bold",
             "input.text": "bold",
             "input.cursor": "bold reverse",
             "input.placeholder": "#777777 italic",
-            # Lists & Selection
             "choice.cursor": "#00d7d7 bold",
             "choice.selected": "bold reverse",
             "choice.item": "",
             "choice.desc": "#888888",
-            # Action Button
             "button.zoink": "bold reverse",
             "button.zoink.hover": "#00d7d7 bold reverse",
             "button.secondary": "reverse",
-            # Status & Progress
             "status.spinner": "#00d7d7 bold",
             "progress.bar.filled": "#00d7d7",
             "progress.bar.empty": "#333333",
             "progress.pct": "bold",
             "progress.meta": "#888888",
-            # Feedback
             "success": "#00ff87 bold",
             "error": "#ff5f5f bold",
             "badge": "#00d7d7",
-            # Footer
             "footer.key": "bold",
             "footer.action": "#888888",
             "footer.sep": "#555555",
@@ -148,5 +353,6 @@ def get_style(mode: str = "auto") -> Style:
 
 def next_theme_mode(current: str) -> str:
     """Cycle to the next theme mode."""
-    idx = THEME_MODES.index(current) if current in THEME_MODES else 0
+    cur_lower = (current or "auto").lower()
+    idx = THEME_MODES.index(cur_lower) if cur_lower in THEME_MODES else 0
     return THEME_MODES[(idx + 1) % len(THEME_MODES)]

@@ -67,13 +67,49 @@ def _cover_from_data(data: bytes) -> Picture:
     return pic
 
 
+def extract_artwork_data(filepath: Path | str) -> tuple[Optional[bytes], str]:
+    """Extract raw album artwork binary data and MIME type from an audio file."""
+    fp = Path(filepath)
+    if not fp.exists() or not fp.is_file():
+        return None, "image/jpeg"
+    ext = fp.suffix.lower()
+    try:
+        if ext == ".mp3":
+            tags = ID3(fp)
+            for k in tags:
+                if k.startswith("APIC"):
+                    pic = tags[k]
+                    return pic.data, getattr(pic, "mime", "image/jpeg")
+        elif ext in (".m4a", ".mp4", ".aac"):
+            audio = MP4(fp)
+            covers = audio.tags.get("covr", []) if audio.tags else []
+            if covers:
+                data = bytes(covers[0])
+                mime = "image/png" if getattr(covers[0], "imageformat", None) == 14 else "image/jpeg"
+                return data, mime
+        elif ext == ".flac":
+            audio = FLAC(fp)
+            if audio.pictures:
+                return audio.pictures[0].data, audio.pictures[0].mime
+        elif ext in (".ogg", ".opus"):
+            audio = OggOpus(fp) if ext == ".opus" else OggVorbis(fp)
+            raw = audio.get("metadata_block_picture", [""])[0]
+            if raw:
+                pic = Picture(base64.b64decode(raw))
+                return pic.data, pic.mime
+    except Exception:
+        pass
+    return None, "image/jpeg"
+
+
 # ---------------------------------------------------------------------------
 # Media Integrity Verification
 # ---------------------------------------------------------------------------
 
 
-def verify_audio_file(filepath: Path) -> bool:
+def verify_audio_file(filepath: Path | str) -> bool:
     """Verify that an audio file exists, has non-trivial size, and has valid container/audio headers."""
+    filepath = Path(filepath)
     if not filepath.exists() or not filepath.is_file():
         return False
     try:
@@ -121,7 +157,7 @@ def verify_audio_file(filepath: Path) -> bool:
 
 
 def embed_metadata(
-    filepath: Path,
+    filepath: Path | str,
     track: TrackResult,
     artwork_data: Optional[bytes] = None,
     lyrics: Optional[str] = None,
@@ -130,6 +166,7 @@ def embed_metadata(
 
     Returns True on success, False on failure.
     """
+    filepath = Path(filepath)
     ext = filepath.suffix.lower()
     lyrics_text = lyrics or track.lyrics or None
     try:
@@ -389,8 +426,9 @@ def is_zoink_file(filepath: Path | str) -> bool:
     return bool(track.source and track.source not in ("local", "external"))
 
 
-def read_metadata(filepath: Path) -> Optional[TrackResult]:
+def read_metadata(filepath: Path | str) -> Optional[TrackResult]:
     """Read metadata from a local audio file into a TrackResult."""
+    filepath = Path(filepath)
     if not filepath.exists():
         return None
     ext = filepath.suffix.lower()

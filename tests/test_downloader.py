@@ -124,3 +124,42 @@ def test_provider_resolution_error_handled(tmp_path, monkeypatch):
     assert job.state == DownloadState.FAILED
     assert "Provider resolution failed" in (job.error or "")
 
+
+def test_download_preferred_format_respected_when_ytdlp_produces_opus(tmp_path, monkeypatch):
+    config = Config()
+    config["download_dir"] = str(tmp_path)
+    config["output_format"] = "mp3"
+    dm = DownloadManager(config)
+
+    track = TrackResult(id="test_fmt", title="Format Test", artist="Artist", url="https://example.com/audio")
+
+    import yt_dlp
+    class DummyOpusYDL:
+        def __init__(self, opts=None, *args, **kwargs):
+            self.opts = opts or {}
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def download(self, urls):
+            outtmpl = self.opts.get("outtmpl", "")
+            if outtmpl:
+                target = Path(str(outtmpl).replace(".%(ext)s", ".opus"))
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(b"dummy_opus_data")
+
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", DummyOpusYDL)
+    monkeypatch.setattr(
+        "zoink.converter.run_ffmpeg_transcode",
+        lambda src, dst, fmt, quality="best": dst.write_bytes(b"transcoded_mp3") or True,
+    )
+    monkeypatch.setattr("zoink.downloader.verify_audio_file", lambda p: True)
+    monkeypatch.setattr("zoink.downloader.fetch_artwork", lambda *args, **kwargs: None)
+    monkeypatch.setattr("zoink.downloader.fetch_lyrics", lambda *args, **kwargs: None)
+
+    job = dm.download(track)
+    assert job.state == DownloadState.DONE
+    assert job.filepath is not None
+    assert str(job.filepath).endswith(".mp3")
+    assert job.filepath.exists()
+

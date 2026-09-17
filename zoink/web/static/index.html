@@ -61,6 +61,71 @@
       --accent-dim: rgba(168, 85, 247, 0.12);
     }
 
+    [data-theme="cyberpunk"] {
+      --bg-base: #0c0814;
+      --bg-surface: #171026;
+      --bg-surface-elevated: #24193d;
+      --bg-surface-hover: #322254;
+      --border-subtle: rgba(255, 234, 0, 0.15);
+      --border-hover: rgba(255, 234, 0, 0.3);
+      --accent: #ff007f;
+      --accent-hover: #ffe600;
+      --accent-glow: rgba(255, 0, 127, 0.25);
+      --accent-dim: rgba(255, 0, 127, 0.12);
+    }
+
+    [data-theme="dracula"] {
+      --bg-base: #1e1f29;
+      --bg-surface: #282a36;
+      --bg-surface-elevated: #343746;
+      --bg-surface-hover: #44475a;
+      --border-subtle: rgba(189, 147, 249, 0.15);
+      --border-hover: rgba(189, 147, 249, 0.3);
+      --accent: #ff79c6;
+      --accent-hover: #bd93f9;
+      --accent-glow: rgba(255, 121, 198, 0.25);
+      --accent-dim: rgba(255, 121, 198, 0.12);
+    }
+
+    [data-theme="nord"] {
+      --bg-base: #242933;
+      --bg-surface: #2e3440;
+      --bg-surface-elevated: #3b4252;
+      --bg-surface-hover: #434c5e;
+      --border-subtle: rgba(136, 192, 208, 0.15);
+      --border-hover: rgba(136, 192, 208, 0.3);
+      --accent: #88c0d0;
+      --accent-hover: #81a1c1;
+      --accent-glow: rgba(136, 192, 208, 0.25);
+      --accent-dim: rgba(136, 192, 208, 0.12);
+    }
+
+    [data-theme="emerald"] {
+      --bg-base: #06140d;
+      --bg-surface: #0a2116;
+      --bg-surface-elevated: #103322;
+      --bg-surface-hover: #16462f;
+      --border-subtle: rgba(16, 185, 129, 0.15);
+      --border-hover: rgba(16, 185, 129, 0.3);
+      --accent: #10b981;
+      --accent-hover: #34d399;
+      --accent-glow: rgba(16, 185, 129, 0.25);
+      --accent-dim: rgba(16, 185, 129, 0.12);
+    }
+
+    [data-theme="rose"] {
+      --bg-base: #191724;
+      --bg-surface: #26233a;
+      --bg-surface-elevated: #312d4a;
+      --bg-surface-hover: #3c375c;
+      --border-subtle: rgba(235, 111, 146, 0.15);
+      --border-hover: rgba(235, 111, 146, 0.3);
+      --accent: #eb6f92;
+      --accent-hover: #f6c177;
+      --accent-glow: rgba(235, 111, 146, 0.25);
+      --accent-dim: rgba(235, 111, 146, 0.12);
+    }
+
     body {
       background-color: var(--bg-base);
       color: var(--text-primary);
@@ -666,33 +731,61 @@
 
       <div class="space-y-3">
         <label class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Colorway</label>
-        <div class="grid grid-cols-2 gap-2.5">
-          <button onclick="setTheme('amoled')" class="p-3 rounded-xl border border-[var(--accent)] bg-black text-left flex items-center space-x-3 transition">
-            <span class="w-4 h-4 rounded-full bg-[#00f2fe]"></span>
-            <div>
-              <p class="font-semibold text-xs text-white">Pure AMOLED</p>
-              <p class="text-[10px] text-neutral-400">Pitch Black</p>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <button onclick="setTheme('amoled')" class="p-2.5 rounded-xl border border-[var(--accent)] bg-black text-left flex items-center space-x-2.5 transition">
+            <span class="w-3.5 h-3.5 rounded-full bg-[#00f2fe] shrink-0"></span>
+            <div class="min-w-0">
+              <p class="font-semibold text-xs text-white truncate">AMOLED</p>
+              <p class="text-[10px] text-neutral-400 truncate">Pitch Black</p>
             </div>
           </button>
-          <button onclick="setTheme('midnight')" class="p-3 rounded-xl border border-[var(--border-subtle)] bg-[#06080d] text-left flex items-center space-x-3 hover:border-[var(--border-hover)] transition">
-            <span class="w-4 h-4 rounded-full bg-[#38bdf8]"></span>
-            <div>
-              <p class="font-semibold text-xs text-white">Midnight</p>
-              <p class="text-[10px] text-neutral-400">Deep Blue</p>
+          <button onclick="setTheme('midnight')" class="p-2.5 rounded-xl border border-[var(--border-subtle)] bg-[#06080d] text-left flex items-center space-x-2.5 hover:border-[var(--border-hover)] transition">
+            <span class="w-3.5 h-3.5 rounded-full bg-[#38bdf8] shrink-0"></span>
+            <div class="min-w-0">
+              <p class="font-semibold text-xs text-white truncate">Midnight</p>
+              <p class="text-[10px] text-neutral-400 truncate">Deep Blue</p>
             </div>
           </button>
-          <button onclick="setTheme('eclipse')" class="p-3 rounded-xl border border-[var(--border-subtle)] bg-[#08090a] text-left flex items-center space-x-3 hover:border-[var(--border-hover)] transition">
-            <span class="w-4 h-4 rounded-full bg-[#10b981]"></span>
-            <div>
-              <p class="font-semibold text-xs text-white">Eclipse</p>
-              <p class="text-[10px] text-neutral-400">Emerald</p>
+          <button onclick="setTheme('emerald')" class="p-2.5 rounded-xl border border-[var(--border-subtle)] bg-[#06140d] text-left flex items-center space-x-2.5 hover:border-[var(--border-hover)] transition">
+            <span class="w-3.5 h-3.5 rounded-full bg-[#10b981] shrink-0"></span>
+            <div class="min-w-0">
+              <p class="font-semibold text-xs text-white truncate">Emerald</p>
+              <p class="text-[10px] text-neutral-400 truncate">Forest Green</p>
             </div>
           </button>
-          <button onclick="setTheme('tokyo')" class="p-3 rounded-xl border border-[var(--border-subtle)] bg-[#050509] text-left flex items-center space-x-3 hover:border-[var(--border-hover)] transition">
-            <span class="w-4 h-4 rounded-full bg-[#a855f7]"></span>
-            <div>
-              <p class="font-semibold text-xs text-white">Tokyo</p>
-              <p class="text-[10px] text-neutral-400">Violet</p>
+          <button onclick="setTheme('cyberpunk')" class="p-2.5 rounded-xl border border-[var(--border-subtle)] bg-[#0c0814] text-left flex items-center space-x-2.5 hover:border-[var(--border-hover)] transition">
+            <span class="w-3.5 h-3.5 rounded-full bg-[#ff007f] shrink-0"></span>
+            <div class="min-w-0">
+              <p class="font-semibold text-xs text-white truncate">Cyberpunk</p>
+              <p class="text-[10px] text-neutral-400 truncate">Neon Pink</p>
+            </div>
+          </button>
+          <button onclick="setTheme('dracula')" class="p-2.5 rounded-xl border border-[var(--border-subtle)] bg-[#1e1f29] text-left flex items-center space-x-2.5 hover:border-[var(--border-hover)] transition">
+            <span class="w-3.5 h-3.5 rounded-full bg-[#ff79c6] shrink-0"></span>
+            <div class="min-w-0">
+              <p class="font-semibold text-xs text-white truncate">Dracula</p>
+              <p class="text-[10px] text-neutral-400 truncate">Gothic Purple</p>
+            </div>
+          </button>
+          <button onclick="setTheme('nord')" class="p-2.5 rounded-xl border border-[var(--border-subtle)] bg-[#242933] text-left flex items-center space-x-2.5 hover:border-[var(--border-hover)] transition">
+            <span class="w-3.5 h-3.5 rounded-full bg-[#88c0d0] shrink-0"></span>
+            <div class="min-w-0">
+              <p class="font-semibold text-xs text-white truncate">Nord</p>
+              <p class="text-[10px] text-neutral-400 truncate">Arctic Frost</p>
+            </div>
+          </button>
+          <button onclick="setTheme('rose')" class="p-2.5 rounded-xl border border-[var(--border-subtle)] bg-[#191724] text-left flex items-center space-x-2.5 hover:border-[var(--border-hover)] transition">
+            <span class="w-3.5 h-3.5 rounded-full bg-[#eb6f92] shrink-0"></span>
+            <div class="min-w-0">
+              <p class="font-semibold text-xs text-white truncate">Rosé Pine</p>
+              <p class="text-[10px] text-neutral-400 truncate">Warm Coral</p>
+            </div>
+          </button>
+          <button onclick="setTheme('tokyo')" class="p-2.5 rounded-xl border border-[var(--border-subtle)] bg-[#050509] text-left flex items-center space-x-2.5 hover:border-[var(--border-hover)] transition">
+            <span class="w-3.5 h-3.5 rounded-full bg-[#a855f7] shrink-0"></span>
+            <div class="min-w-0">
+              <p class="font-semibold text-xs text-white truncate">Tokyo</p>
+              <p class="text-[10px] text-neutral-400 truncate">Violet Night</p>
             </div>
           </button>
         </div>
@@ -716,6 +809,57 @@
       <button onclick="closeSettingsModal()" class="w-full py-2.5 rounded-xl bg-[var(--bg-surface-elevated)] hover:bg-[var(--bg-surface-hover)] text-xs font-semibold text-[var(--text-primary)] transition">
         Done
       </button>
+    </div>
+  </div>
+
+  <!-- CONVERT AUDIO FORMAT MODAL -->
+  <div id="convert-modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-bold text-[var(--text-primary)]">Convert Audio Format</h3>
+          <p class="text-xs text-[var(--text-muted)] truncate max-w-xs" id="convert-modal-track-name">Select track</p>
+        </div>
+        <button onclick="closeConvertModal()" class="text-[var(--text-muted)] hover:text-white p-1">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="space-y-2">
+        <label class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Target Format</label>
+        <div class="grid grid-cols-3 gap-2" id="convert-format-grid">
+          <button type="button" onclick="selectConvertFormat('mp3')" data-fmt="mp3" class="convert-fmt-btn p-2.5 rounded-xl border border-[var(--accent)] bg-[var(--accent-dim)] text-center font-semibold text-xs text-white transition">MP3</button>
+          <button type="button" onclick="selectConvertFormat('flac')" data-fmt="flac" class="convert-fmt-btn p-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-elevated)] text-center font-semibold text-xs text-[var(--text-muted)] hover:text-white transition">FLAC</button>
+          <button type="button" onclick="selectConvertFormat('m4a')" data-fmt="m4a" class="convert-fmt-btn p-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-elevated)] text-center font-semibold text-xs text-[var(--text-muted)] hover:text-white transition">M4A</button>
+          <button type="button" onclick="selectConvertFormat('opus')" data-fmt="opus" class="convert-fmt-btn p-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-elevated)] text-center font-semibold text-xs text-[var(--text-muted)] hover:text-white transition">Opus</button>
+          <button type="button" onclick="selectConvertFormat('ogg')" data-fmt="ogg" class="convert-fmt-btn p-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-elevated)] text-center font-semibold text-xs text-[var(--text-muted)] hover:text-white transition">OGG</button>
+          <button type="button" onclick="selectConvertFormat('wav')" data-fmt="wav" class="convert-fmt-btn p-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-elevated)] text-center font-semibold text-xs text-[var(--text-muted)] hover:text-white transition">WAV</button>
+        </div>
+      </div>
+
+      <div class="space-y-2 pt-1">
+        <label class="flex items-center space-x-2.5 cursor-pointer text-xs text-[var(--text-primary)]">
+          <input type="checkbox" id="convert-replace-toggle" checked class="rounded bg-neutral-900 border-neutral-700 text-[var(--accent)] focus:ring-0">
+          <span>Replace original file in library</span>
+        </label>
+        <p class="text-[11px] text-[var(--text-muted)]">Preserves ID3/Vorbis tags, lyrics, and embedded album art.</p>
+      </div>
+
+      <div id="convert-progress-area" class="hidden space-y-2 pt-2">
+        <div class="w-full bg-[var(--bg-surface-elevated)] rounded-full h-2 overflow-hidden">
+          <div id="convert-progress-bar" class="bg-[var(--accent)] h-full w-0 transition-all duration-300"></div>
+        </div>
+        <p class="text-xs text-center text-[var(--text-muted)]" id="convert-status-text">Converting audio via FFmpeg...</p>
+      </div>
+
+      <div class="flex space-x-2.5 pt-2">
+        <button id="convert-submit-btn" onclick="submitConvert()" class="flex-1 py-2.5 rounded-xl bg-[var(--accent)] text-black font-semibold text-xs hover:bg-[var(--accent-hover)] transition">
+          Start Conversion
+        </button>
+        <button onclick="closeConvertModal()" class="py-2.5 px-4 rounded-xl bg-[var(--bg-surface-elevated)] hover:bg-[var(--bg-surface-hover)] text-xs font-semibold text-[var(--text-primary)] transition">
+          Cancel
+        </button>
+      </div>
     </div>
   </div>
 
@@ -1290,6 +1434,9 @@
             <div class="flex items-center space-x-3 shrink-0 ml-2">
               <span class="text-[10px] font-mono text-[var(--text-muted)] px-1.5 py-0.5 rounded bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] hidden sm:inline-block">${fmt}</span>
               <span class="text-xs font-mono text-[var(--text-muted)] hidden sm:block">${formatTime(t.duration)}</span>
+              <button onclick="event.stopPropagation(); openConvertModal('${escapeHtml(t.id)}')" class="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--bg-surface)] transition" title="Convert Format">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+              </button>
               <a href="/api/file/${encodeURIComponent(t.id)}" download onclick="event.stopPropagation()" class="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--bg-surface)] transition" title="Export File">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
               </a>
@@ -1349,6 +1496,9 @@
             <td class="py-3 px-2 text-right pr-6 font-mono text-[var(--text-muted)]" onclick="playTrackById('${escapeHtml(t.id)}')">${formatTime(t.duration)}</td>
             <td class="py-3 pr-4 text-center">
               <div class="flex items-center justify-center space-x-1">
+                <button onclick="event.stopPropagation(); openConvertModal('${escapeHtml(t.id)}')" class="p-1.5 rounded text-[var(--text-muted)] hover:text-[var(--accent)] transition" title="Convert Format">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+                </button>
                 <button onclick="event.stopPropagation(); toggleFavorite('${escapeHtml(t.id)}')" class="p-1.5 rounded text-[var(--text-muted)] hover:text-red-400 transition" title="Favorite">
                   <svg class="w-4 h-4 ${isFav ? 'text-red-500 fill-current' : ''}" fill="${isFav ? 'currentColor' : 'none'}" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
                 </button>
@@ -1860,6 +2010,86 @@
       }, 3200);
     }
 
+    let currentConvertTrackId = null;
+    let selectedConvertFormat = "mp3";
+
+    function openConvertModal(trackId) {
+      const track = state.tracks.find(t => t.id === trackId);
+      if (!track) return;
+      currentConvertTrackId = trackId;
+      document.getElementById("convert-modal-track-name").innerText = `${track.title} — ${track.artist || 'Unknown'}`;
+      document.getElementById("convert-progress-area").classList.add("hidden");
+      document.getElementById("convert-progress-bar").style.width = "0%";
+      const btn = document.getElementById("convert-submit-btn");
+      btn.disabled = false;
+      btn.innerText = "Start Conversion";
+      selectConvertFormat("mp3");
+      document.getElementById("convert-modal").classList.remove("hidden");
+    }
+
+    function closeConvertModal() {
+      document.getElementById("convert-modal").classList.add("hidden");
+      currentConvertTrackId = null;
+    }
+
+    function selectConvertFormat(fmt) {
+      selectedConvertFormat = fmt;
+      document.querySelectorAll(".convert-fmt-btn").forEach(btn => {
+        if (btn.getAttribute("data-fmt") === fmt) {
+          btn.className = "convert-fmt-btn p-2.5 rounded-xl border border-[var(--accent)] bg-[var(--accent-dim)] text-center font-semibold text-xs text-white transition";
+        } else {
+          btn.className = "convert-fmt-btn p-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-elevated)] text-center font-semibold text-xs text-[var(--text-muted)] hover:text-white transition";
+        }
+      });
+    }
+
+    async function submitConvert() {
+      if (!currentConvertTrackId) return;
+      const btn = document.getElementById("convert-submit-btn");
+      const progArea = document.getElementById("convert-progress-area");
+      const progBar = document.getElementById("convert-progress-bar");
+      const statusText = document.getElementById("convert-status-text");
+      const replaceToggle = document.getElementById("convert-replace-toggle");
+
+      btn.disabled = true;
+      btn.innerText = "Converting...";
+      progArea.classList.remove("hidden");
+      progBar.style.width = "30%";
+      statusText.innerText = `Transcoding to ${selectedConvertFormat.toUpperCase()} via FFmpeg...`;
+
+      try {
+        const resp = await fetch("/api/convert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            track_id: currentConvertTrackId,
+            format: selectedConvertFormat,
+            replace_original: replaceToggle.checked
+          })
+        });
+        const res = await resp.json();
+        if (resp.ok) {
+          progBar.style.width = "100%";
+          statusText.innerText = `✓ Converted to ${selectedConvertFormat.toUpperCase()}!`;
+          showToast(`Converted to ${selectedConvertFormat.toUpperCase()}`);
+          setTimeout(() => {
+            closeConvertModal();
+            loadLibraryData();
+          }, 700);
+        } else {
+          progBar.style.width = "0%";
+          statusText.innerText = `Error: ${res.error || 'Conversion failed'}`;
+          btn.disabled = false;
+          btn.innerText = "Try Again";
+        }
+      } catch (err) {
+        progBar.style.width = "0%";
+        statusText.innerText = `Error: ${err.message}`;
+        btn.disabled = false;
+        btn.innerText = "Try Again";
+      }
+    }
+
     // Keyboard Shortcuts
     window.addEventListener("keydown", (e) => {
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
@@ -1876,6 +2106,7 @@
         switchTab("queue");
       } else if (e.key === "Escape") {
         closeSettingsModal();
+        closeConvertModal();
         closeMobileNowPlaying();
         toggleLyrics(false);
       }

@@ -394,44 +394,8 @@ def api_artwork(track_id):
 
     # Extract artwork from audio file
     try:
-        from mutagen.flac import FLAC
-        from mutagen.id3 import ID3
-        from mutagen.mp4 import MP4
-        from mutagen.oggopus import OggOpus
-        from mutagen.oggvorbis import OggVorbis
-        import base64
-
-        ext = fp.suffix.lower()
-        data, mime = None, "image/jpeg"
-
-        if ext == ".mp3":
-            tags = ID3(fp)
-            for k in tags:
-                if k.startswith("APIC"):
-                    pic = tags[k]
-                    data = pic.data
-                    mime = getattr(pic, "mime", "image/jpeg")
-                    break
-        elif ext in (".m4a", ".mp4"):
-            audio = MP4(fp)
-            covers = audio.tags.get("covr", []) if audio.tags else []
-            if covers:
-                data = bytes(covers[0])
-                mime = "image/png" if getattr(covers[0], "imageformat", None) == 14 else "image/jpeg"
-        elif ext == ".flac":
-            audio = FLAC(fp)
-            if audio.pictures:
-                data = audio.pictures[0].data
-                mime = audio.pictures[0].mime
-        elif ext in (".ogg", ".opus"):
-            audio = OggOpus(fp) if ext == ".opus" else OggVorbis(fp)
-            raw = audio.get("metadata_block_picture", [""])[0]
-            if raw:
-                from mutagen.flac import Picture
-                pic = Picture(base64.b64decode(raw))
-                data = pic.data
-                mime = pic.mime
-
+        from zoink.metadata import extract_artwork_data
+        data, mime = extract_artwork_data(fp)
         if data:
             with _art_cache_lock:
                 if len(_art_cache) > 200:
@@ -579,10 +543,12 @@ def api_download_start():
     track_data = data.get("track") or data
     if not track_data or not track_data.get("id"):
         return jsonify({"error": "Track id is required"}), 400
-    return _start_single_download(track_data)
+    fmt = data.get("format") or track_data.get("format")
+    quality = data.get("quality") or track_data.get("quality")
+    return _start_single_download(track_data, output_format=fmt, quality=quality)
 
 
-def _start_single_download(track_data: dict) -> Response:
+def _start_single_download(track_data: dict, output_format: Optional[str] = None, quality: Optional[str] = None) -> Response:
     dm = _get_downloader()
     lib = _get_library()
 
@@ -598,12 +564,68 @@ def _start_single_download(track_data: dict) -> Response:
     )
 
     def _worker():
-        job = dm.download(track)
+        job = dm.download(track, output_format=output_format, quality=quality)
         if job.state == DownloadState.DONE and job.filepath:
             lib.add_track(job.filepath, job.track)
 
     _bg_pool.submit(_worker)
     return jsonify({"status": "queued", "id": track.id, "title": track.title})
+
+
+# ---------------------------------------------------------------------------
+# Audio Conversion Operations
+# ---------------------------------------------------------------------------
+
+
+@app.route("/api/convert/formats", methods=["GET"])
+def api_convert_formats():
+    from zoink.converter import SUPPORTED_FORMATS
+    cfg = _get_config()
+    return jsonify({
+        "formats": list(SUPPORTED_FORMATS),
+        "default": (cfg.output_format or "mp3").lower().lstrip("."),
+    })
+
+
+@app.route("/api/convert", methods=["POST"])
+def api_convert_track():
+    data = request.get_json(silent=True) or {}
+    track_id = data.get("track_id") or data.get("id") or data.get("filepath")
+    target_format = data.get("format") or data.get("target_format")
+    quality = data.get("quality") or _get_config().quality or "best"
+    replace_original = data.get("replace_original", True)
+
+    if not track_id:
+        return jsonify({"error": "track_id or filepath is required"}), 400
+    if not target_format:
+        return jsonify({"error": "format is required"}), 400
+
+    from zoink.converter import SUPPORTED_FORMATS, convert_library_track
+    target_format = target_format.lower().lstrip(".")
+    if target_format not in SUPPORTED_FORMATS:
+        return jsonify({"error": f"Unsupported format. Choose from {', '.join(SUPPORTED_FORMATS)}"}), 400
+
+    lib = _get_library()
+    try:
+        ok, out_path, err = convert_library_track(
+            library=lib,
+            track_id_or_path=track_id,
+            target_format=target_format,
+            quality=quality,
+            replace_original=replace_original,
+        )
+        if not ok or not out_path:
+            return jsonify({"error": err or "Conversion failed"}), 500
+
+        updated = lib.get_track_by_path(str(out_path))
+        return jsonify({
+            "status": "success",
+            "message": f"Successfully converted to {target_format.upper()}",
+            "filepath": str(out_path),
+            "track": updated,
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/api/download/bulk", methods=["POST"])

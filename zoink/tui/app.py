@@ -27,7 +27,7 @@ from zoink.downloader import DownloadJob, DownloadManager, DownloadState
 from zoink.library import Library
 from zoink.provider import AlbumResult, TrackResult
 from zoink.providers import YouTubeProvider
-from zoink.tui.theme import next_theme_mode
+from zoink.tui.theme import THEME_MODES, next_theme_mode
 
 
 class TUIPhase(enum.Enum):
@@ -44,15 +44,17 @@ class TUIPhase(enum.Enum):
     LIBRARY_DETAIL = "library_detail"
     HELP = "help"
     CONFIG = "config"
+    CONVERT = "convert"
 
 
 SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/library", "Browse and manage your downloaded music"),
     ("/help", "Show commands guide and keyboard controls"),
-    ("/theme", "Toggle dark / light / auto theme mode"),
+    ("/theme", "Toggle dark / amoled / cyberpunk / dracula / nord / emerald / rose themes"),
     ("/scan", "Rescan music folder and index tracks"),
     ("/web", "Launch local web player server"),
     ("/config", "Customise settings, download options, and web player name"),
+    ("/convert", "Convert a library track to another audio format"),
     ("/quit", "Exit ZoinK cleanly"),
 ]
 
@@ -186,6 +188,16 @@ class ZoinKTUI:
         self.config_edit_value: str = ""
         self.config_edit_cursor: int = 0
         self.config_status_message: str = ""
+
+        # Converter tool state
+        self.convert_track: Optional[dict] = None
+        self.convert_target_formats: list[str] = ["mp3", "flac", "m4a", "opus", "ogg", "wav"]
+        self.convert_format_index: int = 0
+        self.convert_replace_original: bool = True
+        self.convert_in_progress: bool = False
+        self.convert_progress: float = 0.0
+        self.convert_status_text: str = ""
+        self.convert_error: str = ""
 
         # Initialize library tracks on startup
         try:
@@ -491,13 +503,16 @@ class ZoinKTUI:
         self.notify()
 
     def _build_audio_choices(self, track: TrackResult) -> list[AudioChoice]:
-        """Construct music-first format and quality options."""
+        """Construct music-first format and quality options, prioritizing user preferred format."""
         dur = track.duration or 200
 
         def _mb(kbps: int) -> float:
             return round((kbps * 1000 / 8) * dur / (1024 * 1024), 1)
 
-        return [
+        pref_fmt = (self.config.output_format or "mp3").lower().lstrip(".")
+        pref_q = (self.config.quality or "best").lower()
+
+        choices = [
             AudioChoice(
                 id="best",
                 label="Best Available Audio",
@@ -550,14 +565,41 @@ class ZoinKTUI:
             ),
         ]
 
+        # Prioritize preferred format to Choice #0
+        pref_idx = -1
+        for i, c in enumerate(choices):
+            if c.format == pref_fmt:
+                pref_idx = i
+                break
+
+        if pref_idx > 0:
+            c = choices.pop(pref_idx)
+            c.badge = f"{c.badge} ★"
+            choices.insert(0, c)
+        elif pref_idx == -1:
+            # Container like ogg or wav
+            custom = AudioChoice(
+                id=f"{pref_fmt}_pref",
+                label=f"{pref_fmt.upper()} (Preferred)",
+                format=pref_fmt,
+                quality=pref_q,
+                transcode=True,
+                badge=f"{pref_fmt.upper()} ★",
+                description=f"Configured format preference: {pref_fmt.upper()}",
+                est_size_mb=_mb(256),
+            )
+            choices.insert(0, custom)
+
+        return choices
+
     def trigger_zoink(self) -> None:
         """Initiate download for current track or album."""
         if self.phase == TUIPhase.PICKING:
             if not self.selected_track:
                 return
             choice = self.audio_choices[self.choice_index]
-            self.config["output_format"] = choice.format
-            self.config["quality"] = choice.quality
+            target_fmt = choice.format
+            target_q = choice.quality
 
             self.phase = TUIPhase.DOWNLOADING
             self.download_progress = 0.0
@@ -601,7 +643,16 @@ class ZoinKTUI:
 
             def _worker():
                 try:
-                    job = self.dl_manager.download(track, on_progress=_on_progress)
+                    import inspect
+                    sig = inspect.signature(self.dl_manager.download)
+                    kwargs = {"on_progress": _on_progress}
+                    if "output_format" in sig.parameters:
+                        kwargs["output_format"] = target_fmt
+                    if "quality" in sig.parameters:
+                        kwargs["quality"] = target_q
+                    self.config["output_format"] = target_fmt
+                    self.config["quality"] = target_q
+                    job = self.dl_manager.download(track, **kwargs)
                     if self.should_exit or self._is_shutting_down:
                         return
                     if job.state == DownloadState.DONE and self.phase != TUIPhase.DONE:
@@ -658,7 +709,17 @@ class ZoinKTUI:
 
             def _batch_worker():
                 try:
-                    jobs = self.dl_manager.download_batch(selected, on_complete=_on_batch_complete)
+                    import inspect
+                    sig = inspect.signature(self.dl_manager.download_batch)
+                    kwargs = {"on_complete": _on_batch_complete}
+                    if "output_format" in sig.parameters:
+                        kwargs["output_format"] = self.config.output_format
+                    if "quality" in sig.parameters:
+                        kwargs["quality"] = self.config.quality
+                    jobs = self.dl_manager.download_batch(
+                        selected,
+                        **kwargs,
+                    )
                     if self.is_cancelled or self.should_exit:
                         if self.phase == TUIPhase.DOWNLOADING and not self.should_exit:
                             self.phase = self.prev_phase if self.prev_phase != TUIPhase.DOWNLOADING else TUIPhase.INPUT
@@ -738,6 +799,8 @@ class ZoinKTUI:
             self.open_web_player()
         elif c in ("/config", "/cfg", "/settings", "/preferences"):
             self.open_config()
+        elif c in ("/convert", "/transcode"):
+            self.open_convert()
         elif c in ("/quit", "/exit", "/q"):
             self.request_exit()
         elif c in ("/clear", "/c"):
@@ -762,6 +825,115 @@ class ZoinKTUI:
         self.config_status_message = ""
         self.notify()
 
+    def open_convert(self, track: Optional[dict] = None) -> None:
+        """Open the interactive audio format conversion screen for a track."""
+        if track is None:
+            if self.phase == TUIPhase.LIBRARY_DETAIL and self.selected_library_track:
+                track = self.selected_library_track
+            elif self.library_tracks and 0 <= self.library_cursor < len(self.library_tracks):
+                track = self.library_tracks[self.library_cursor]
+            else:
+                self.library_status_message = "No track selected to convert. Browse library first."
+                self.open_library(rescan=False)
+                return
+
+        self.convert_track = track
+        self.convert_format_index = 0
+        self.convert_replace_original = True
+        self.convert_in_progress = False
+        self.convert_progress = 0.0
+        self.convert_status_text = ""
+        self.convert_error = ""
+        self.prev_phase = self.phase
+        self.phase = TUIPhase.CONVERT
+        self.notify()
+
+    def cancel_convert(self) -> None:
+        """Exit the converter screen and return to the previous view."""
+        if self.convert_in_progress:
+            return
+        if self.prev_phase in (TUIPhase.LIBRARY, TUIPhase.LIBRARY_DETAIL):
+            self.phase = self.prev_phase
+        else:
+            self.phase = TUIPhase.LIBRARY
+        self.notify()
+
+    def handle_convert_up(self) -> None:
+        if not self.convert_in_progress and self.convert_format_index > 0:
+            self.convert_format_index -= 1
+            self.notify()
+
+    def handle_convert_down(self) -> None:
+        if not self.convert_in_progress and self.convert_format_index < len(self.convert_target_formats) - 1:
+            self.convert_format_index += 1
+            self.notify()
+
+    def handle_toggle_convert_replace(self) -> None:
+        if not self.convert_in_progress:
+            self.convert_replace_original = not self.convert_replace_original
+            self.notify()
+
+    def _select_convert_format(self, idx: int) -> None:
+        if not self.convert_in_progress and 0 <= idx < len(self.convert_target_formats):
+            self.convert_format_index = idx
+            self.notify()
+
+    def start_convert(self) -> None:
+        """Initiate audio conversion in a background thread."""
+        if self.convert_in_progress or not self.convert_track:
+            return
+        self.convert_in_progress = True
+        self.convert_error = ""
+        self.convert_progress = 5.0
+        target_fmt = self.convert_target_formats[self.convert_format_index]
+        self.convert_status_text = f"Preparing to convert to {target_fmt.upper()}..."
+        self.notify()
+
+        track = self.convert_track
+        replace = self.convert_replace_original
+        track_id_or_path = track.get("filepath") or track.get("id")
+
+        def _worker():
+            try:
+                from zoink.converter import convert_library_track
+
+                def _on_prog(pct: float, msg: str):
+                    self.convert_progress = pct
+                    self.convert_status_text = msg
+                    self.notify()
+
+                success, dest_path, err = convert_library_track(
+                    library=self.library,
+                    track_id_or_path=track_id_or_path,
+                    target_format=target_fmt,
+                    quality=self.config.quality or "best",
+                    replace_original=replace,
+                    on_progress=_on_prog,
+                )
+
+                if self.should_exit or self._is_shutting_down:
+                    return
+
+                if success and dest_path:
+                    self.convert_in_progress = False
+                    self.convert_status_text = f"Converted to {target_fmt.upper()} successfully!"
+                    self.convert_progress = 100.0
+                    self._reload_library_tracks()
+                    self.library_status_message = f"Converted '{track.get('title', 'track')}' to {target_fmt.upper()}"
+                    self.phase = TUIPhase.LIBRARY
+                else:
+                    self.convert_in_progress = False
+                    self.convert_error = err or f"Failed to convert audio to {target_fmt.upper()}."
+                    self.convert_status_text = ""
+            except Exception as exc:
+                if not (self.should_exit or self._is_shutting_down):
+                    self.convert_in_progress = False
+                    self.convert_error = str(exc)
+            finally:
+                self.notify()
+
+        threading.Thread(target=_worker, daemon=True).start()
+
     def _get_config_items(self) -> list[dict]:
         """Return structured configuration items for user customization."""
         return [
@@ -776,7 +948,7 @@ class ZoinKTUI:
                 "key": "output_format",
                 "label": "Audio Format",
                 "type": "choice",
-                "choices": ["mp3", "m4a", "opus", "flac"],
+                "choices": ["mp3", "m4a", "opus", "flac", "ogg", "wav"],
                 "value": self.config.output_format,
                 "desc": "Target container format for downloaded audio",
             },
@@ -792,7 +964,7 @@ class ZoinKTUI:
                 "key": "theme",
                 "label": "Theme Mode",
                 "type": "choice",
-                "choices": ["auto", "dark", "light"],
+                "choices": list(THEME_MODES),
                 "value": self.theme_mode,
                 "desc": "TUI color scheme (auto detects terminal background)",
             },
@@ -1153,6 +1325,8 @@ class ZoinKTUI:
             if not self.config_editing:
                 if self.config_cursor > 0:
                     self.config_cursor -= 1
+        elif self.phase == TUIPhase.CONVERT:
+            self.handle_convert_up()
         self.notify()
 
     def handle_down(self) -> None:
@@ -1183,6 +1357,8 @@ class ZoinKTUI:
             if not self.config_editing:
                 if self.config_cursor < len(self._get_config_items()) - 1:
                     self.config_cursor += 1
+        elif self.phase == TUIPhase.CONVERT:
+            self.handle_convert_down()
         self.notify()
 
     def handle_enter(self) -> None:
@@ -1204,6 +1380,9 @@ class ZoinKTUI:
                 self.handle_inspect()
         elif self.phase == TUIPhase.LIBRARY_DETAIL:
             self.handle_play()
+        elif self.phase == TUIPhase.CONVERT:
+            if not self.convert_in_progress:
+                self.start_convert()
         elif self.phase == TUIPhase.CONFIG:
             if self.config_editing:
                 items = self._get_config_items()
@@ -1239,6 +1418,8 @@ class ZoinKTUI:
             self.notify()
         elif self.phase == TUIPhase.HELP:
             self.go_home()
+        elif self.phase == TUIPhase.CONVERT:
+            self.cancel_convert()
         elif self.phase == TUIPhase.CONFIG:
             if self.config_editing:
                 self.config_editing = False
@@ -1274,6 +1455,8 @@ class ZoinKTUI:
             self.notify()
         elif self.phase in (TUIPhase.LIBRARY, TUIPhase.LIBRARY_DETAIL):
             self.handle_play()
+        elif self.phase == TUIPhase.CONVERT:
+            self.handle_toggle_convert_replace()
         elif self.phase == TUIPhase.CONFIG:
             if not self.config_editing:
                 self.handle_cycle_config(forward=True)
@@ -1354,13 +1537,19 @@ class ZoinKTUI:
             if self.confirm_delete_id:
                 footer_hints = [("y", "confirm delete"), ("n", "cancel")]
             else:
-                footer_hints = [("↑↓", "browse"), ("↵/i", "inspect"), ("p/space", "play"), ("s", "stop"), ("d", "delete"), ("r", "rescan"), ("o", "sort"), ("esc", "home")]
+                footer_hints = [("↑↓", "browse"), ("↵/i", "inspect"), ("c", "convert"), ("p/space", "play"), ("s", "stop"), ("d", "delete"), ("r", "rescan"), ("o", "sort"), ("esc", "home")]
         elif self.phase == TUIPhase.LIBRARY_DETAIL:
             content_lines = self._render_library_detail_screen(width)
             if self.confirm_delete_id:
                 footer_hints = [("y", "confirm delete"), ("n", "cancel")]
             else:
-                footer_hints = [("p/↵", "play"), ("s", "stop"), ("d", "delete"), ("esc", "library")]
+                footer_hints = [("p/↵", "play"), ("c", "convert"), ("s", "stop"), ("d", "delete"), ("esc", "library")]
+        elif self.phase == TUIPhase.CONVERT:
+            content_lines = self._render_convert_screen(width)
+            if self.convert_in_progress:
+                footer_hints = [("converting...", "please wait"), ("^c", "quit")]
+            else:
+                footer_hints = [("↑↓", "format"), ("r/space", "replace"), ("↵", "convert"), ("esc", "cancel"), ("^c", "quit")]
         elif self.phase == TUIPhase.HELP:
             content_lines = self._render_help_screen(width)
             footer_hints = [("↵/esc", "home"), ("^c", "quit")]
@@ -2276,3 +2465,109 @@ class ZoinKTUI:
             else:
                 self.library_cursor = idx
                 self.notify()
+
+    def _render_convert_screen(self, width: int) -> list[tuple]:
+        out: list[tuple] = []
+        track = self.convert_track or {}
+        box_w = min(width - 4, 76)
+        pad_x = " " * max(0, (width - box_w) // 2)
+        inner_w = box_w - 4
+
+        header = "Audio Format Converter"
+        head_pad = " " * max(0, (width - len(header)) // 2)
+        out.append(("", head_pad))
+        out.append(("class:primary", header + "\n\n"))
+
+        out.append(("class:border", pad_x + "╭" + "─" * (box_w - 2) + "╮\n"))
+
+        # Error banner if any
+        if self.convert_error:
+            err_msg = f"  ✗ Error: {self.convert_error}"
+            out.append(("class:error", f"{pad_x}│ {err_msg:<{inner_w}} │\n"))
+            out.append(("class:border", f"{pad_x}│" + "─" * (box_w - 2) + "│\n"))
+
+        # Track metadata summary
+        title = (track.get("title") or "Unknown Title")[:inner_w - 14]
+        artist = (track.get("artist") or "Unknown Artist")[:inner_w - 14]
+        src_path = Path(track.get("filepath", "")) if track.get("filepath") else None
+        current_fmt = src_path.suffix.lstrip(".").upper() if src_path else "UNKNOWN"
+
+        out.append(("class:secondary", f"{pad_x}│ Track:   {title:<{inner_w - 9}} │\n"))
+        out.append(("class:muted", f"{pad_x}│ Artist:  {artist:<{inner_w - 9}} │\n"))
+        out.append(("class:dim", f"{pad_x}│ Current: {current_fmt:<{inner_w - 9}} │\n"))
+        out.append(("class:border", f"{pad_x}│" + "─" * (box_w - 2) + "│\n"))
+
+        # Format Selection
+        format_info = {
+            "mp3": ("MP3", "LAME CBR 320k · Universal compatibility"),
+            "flac": ("FLAC", "16-bit lossless studio archive preservation"),
+            "m4a": ("M4A / AAC", "Clean Apple & Android native AAC"),
+            "opus": ("Opus", "Ultra-efficient modern voice & music codec"),
+            "ogg": ("OGG Vorbis", "Open-source Vorbis container"),
+            "wav": ("WAV", "Uncompressed studio PCM stream"),
+        }
+
+        out.append(("class:primary", f"{pad_x}│ Choose Target Format:{' ' * max(0, inner_w - 21)} │\n"))
+        for i, fmt in enumerate(self.convert_target_formats):
+            is_sel = (i == self.convert_format_index)
+            prefix = " > " if is_sel else "   "
+            chk = "[*]" if is_sel else "[ ]"
+            name, desc = format_info.get(fmt, (fmt.upper(), ""))
+            row = f"{prefix}{chk} {name:<10} {desc}"
+            style = "class:choice.selected" if is_sel else "class:choice.item"
+            handler = self._click_handler(lambda idx=i: self._select_convert_format(idx))
+            out.append(("class:border", f"{pad_x}│"))
+            out.append((style, row.ljust(inner_w)[:inner_w], handler))
+            out.append(("class:border", "│\n"))
+
+        out.append(("class:border", f"{pad_x}│" + "─" * (box_w - 2) + "│\n"))
+
+        # Replace original option
+        rep_mark = "[✓]" if self.convert_replace_original else "[✗]"
+        rep_text = f"  {rep_mark} Replace original file (press 'r' to toggle)"
+        h_rep = self._click_handler(self.handle_toggle_convert_replace)
+        out.append(("class:border", f"{pad_x}│"))
+        out.append(("class:secondary", rep_text.ljust(inner_w)[:inner_w], h_rep))
+        out.append(("class:border", "│\n"))
+
+        # Conversion in progress view
+        if self.convert_in_progress:
+            out.append(("class:border", f"{pad_x}│" + "─" * (box_w - 2) + "│\n"))
+            pct = int(self.convert_progress)
+            bar_len = min(28, inner_w - 12)
+            fill = int((pct / 100.0) * bar_len)
+            bar_str = "█" * fill + "░" * max(0, bar_len - fill)
+            st_text = self.convert_status_text or f"Converting... {pct}%"
+            out.append(("class:progress.bar.filled", f"{pad_x}│  [{bar_str}] {pct:3d}%{' ' * max(0, inner_w - bar_len - 11)} │\n"))
+            out.append(("class:status.spinner", f"{pad_x}│  {st_text:<{inner_w - 2}} │\n"))
+
+        out.append(("class:border", f"{pad_x}│" + "─" * (box_w - 2) + "│\n"))
+
+        # Action buttons
+        if self.convert_in_progress:
+            conv_btn = " [ Converting... ] "
+            pad_btn = " " * max(0, (inner_w - len(conv_btn)) // 2)
+            out.append(("class:border", f"{pad_x}│ {pad_btn}"))
+            out.append(("class:button.secondary", conv_btn))
+            rem = max(0, inner_w - len(pad_btn) - len(conv_btn))
+            out.append(("class:border", " " * rem + " │\n"))
+        else:
+            conv_btn = " [ ↵ convert ] "
+            toggle_btn = " [ r replace ] "
+            cancel_btn = " [ esc cancel ] "
+            h_conv = self._click_handler(self.start_convert)
+            h_tog = self._click_handler(self.handle_toggle_convert_replace)
+            h_canc = self._click_handler(self.cancel_convert)
+            btns = f"{conv_btn}  {toggle_btn}  {cancel_btn}"
+            pad_btn = " " * max(0, (inner_w - len(btns)) // 2)
+            out.append(("class:border", f"{pad_x}│ {pad_btn}"))
+            out.append(("class:button.zoink", conv_btn, h_conv))
+            out.append(("", "  "))
+            out.append(("class:button.secondary", toggle_btn, h_tog))
+            out.append(("", "  "))
+            out.append(("class:button.secondary", cancel_btn, h_canc))
+            rem = max(0, inner_w - len(pad_btn) - len(btns))
+            out.append(("class:border", " " * rem + " │\n"))
+
+        out.append(("class:border", pad_x + "╰" + "─" * (box_w - 2) + "╯\n"))
+        return out

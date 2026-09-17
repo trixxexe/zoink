@@ -82,6 +82,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     scan_p.add_argument("-d", "--dir", help="Directory to scan (default: configured download_dir)")
     scan_p.add_argument("--no-prune", action="store_true", help="Do not prune missing files from database")
 
+    # convert subcommand
+    convert_p = sub.add_parser("convert", help="Convert an audio file or library track to another format")
+    convert_p.add_argument("target", help="Audio file path, library track ID, or title")
+    convert_p.add_argument("-f", "--format", required=True, choices=["mp3", "flac", "m4a", "opus", "ogg", "wav"], help="Target format")
+    convert_p.add_argument("-q", "--quality", choices=["best", "lossless", "320", "320k", "256", "256k", "192", "192k", "160", "160k", "128", "128k"], default="best", help="Quality / bitrate profile")
+    convert_p.add_argument("--keep", action="store_true", help="Keep original file (do not replace in library)")
+
     # config subcommand
     config_p = sub.add_parser("config", help="View or modify configuration")
     config_p.add_argument("action", nargs="?", choices=["get", "set", "show", "path", "reset"], help="Action to perform")
@@ -104,6 +111,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         return _cmd_serve(args)
     elif args.command == "scan":
         return _cmd_scan(args)
+    elif args.command == "convert":
+        return _cmd_convert(args)
     elif args.command == "config":
         return _cmd_config(args)
     else:
@@ -346,6 +355,53 @@ def _cmd_scan(args) -> int:
     console.print(f"[green]✓[/green] Indexed [bold]{count}[/bold] new or updated tracks.")
     console.print(f"Total library size: [bold]{lib.count()}[/bold] tracks.")
     return 0
+
+
+def _cmd_convert(args) -> int:
+    _print_header("Audio Converter")
+    from zoink.config import Config
+    from zoink.converter import convert_library_track
+    from zoink.library import Library
+
+    config = Config.get()
+    target_path = Path(args.target).expanduser().resolve()
+    replace = not args.keep
+
+    lib = Library(config)
+    target_fmt = args.format.lower().lstrip(".")
+    console.print(f"Target: [bold]{args.target}[/bold]")
+    console.print(f"Format: [bold cyan]{target_fmt.upper()}[/bold cyan] (quality: {args.quality}, replace: {replace})")
+
+    if target_path.exists() and target_path.is_file():
+        track_ref = target_path
+    else:
+        # Match library track by ID or title query
+        track = lib.get_track_by_id(args.target)
+        if not track:
+            matches = lib.search_tracks(args.target)
+            if matches:
+                track = matches[0]
+        if not track:
+            console.print(f"[red]Error:[/red] Target file or library track not found: {args.target}")
+            return 1
+        track_ref = track.get("filepath") or track["id"]
+        console.print(f"Matched track: [bold]{track.get('title')}[/bold] by [dim]{track.get('artist', 'Unknown')}[/dim]")
+
+    console.print("Converting audio via FFmpeg...")
+    ok, final_path, err = convert_library_track(
+        library=lib,
+        track_id_or_path=track_ref,
+        target_format=target_fmt,
+        quality=args.quality,
+        replace_original=replace,
+    )
+
+    if ok and final_path:
+        console.print(f"[bold green]✓ Successfully converted to:[/bold green] {final_path}")
+        return 0
+    else:
+        console.print(f"[bold red]✗ Conversion failed:[/bold red] {err}")
+        return 1
 
 
 def _cmd_config(args) -> int:
