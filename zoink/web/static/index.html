@@ -2,7 +2,7 @@
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="/static/tailwind.min.js"></script>
   <script>
     if (!window.tailwind) {
@@ -185,6 +185,47 @@
     .pb-safe {
       padding-bottom: env(safe-area-inset-bottom, 16px);
     }
+
+    /* Toast Notifications */
+    #toast-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        pointer-events: none;
+    }
+    .toast-item {
+        pointer-events: auto;
+        padding: 12px 20px;
+        border-radius: 12px;
+        font-size: 0.82rem;
+        font-weight: 500;
+        color: white;
+        backdrop-filter: blur(16px);
+        transform: translateX(120%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+        opacity: 0;
+        max-width: 360px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .toast-visible {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    .toast-info { background: rgba(30, 30, 50, 0.92); border: 1px solid var(--border-subtle); }
+    .toast-success { background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); color: #6ee7b7; }
+    .toast-error { background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; }
+    .toast-warning { background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.4); color: #fde68a; }
+
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+            animation-duration: 0.01ms !important;
+            transition-duration: 0.01ms !important;
+        }
+    }
   </style>
 </head>
 <body class="h-screen w-screen overflow-hidden flex flex-col antialiased">
@@ -261,6 +302,14 @@
           <span class="w-6 h-6 rounded bg-purple-500/20 text-purple-400 flex items-center justify-center text-xs">↻</span>
           <span class="truncate">Rescan Folder</span>
         </button>
+      </div>
+
+      <div class="mt-4 px-3 py-1.5 text-[11px] font-semibold tracking-wider text-[var(--text-muted)] uppercase flex items-center justify-between">
+          <span>Playlists</span>
+          <button onclick="createPlaylistPrompt()" class="text-[var(--accent)] hover:text-[var(--accent-hover)] text-lg leading-none" title="Create Playlist">+</button>
+      </div>
+      <div id="playlists-list" class="space-y-0.5">
+          <p class="text-xs text-[var(--text-muted)] px-3 py-2 italic">No playlists yet</p>
       </div>
 
       <!-- Compact System Status -->
@@ -381,6 +430,18 @@
             <div class="divide-y divide-[var(--border-subtle)] border border-[var(--border-subtle)] rounded-xl bg-[var(--bg-surface)] overflow-hidden" id="popular-tracks-list">
               <!-- Rendered dynamically -->
             </div>
+          </div>
+
+          <!-- Recently Played -->
+          <div id="recently-played-section" class="hidden">
+              <div class="flex items-center justify-between mb-4">
+                  <div>
+                      <h2 class="text-lg md:text-xl font-bold tracking-tight text-[var(--text-primary)]">Recently Played</h2>
+                      <p class="text-xs text-[var(--text-muted)]">Your listening history</p>
+                  </div>
+              </div>
+              <div class="divide-y divide-[var(--border-subtle)] border border-[var(--border-subtle)] rounded-xl bg-[var(--bg-surface)] overflow-hidden" id="recently-played-list">
+              </div>
           </div>
         </section>
 
@@ -539,7 +600,7 @@
         <h4 id="player-title" class="font-semibold text-sm truncate text-[var(--text-primary)] hover:underline cursor-pointer" onclick="openMobileNowPlaying()">No song playing</h4>
         <p id="player-artist" class="text-xs text-[var(--text-muted)] truncate hover:underline cursor-pointer">Select a track</p>
       </div>
-      <button id="player-heart-btn" onclick="toggleFavoriteCurrent()" class="hidden sm:block text-[var(--text-muted)] hover:text-red-400 transition p-1" title="Save to Favorites">
+      <button id="player-heart-btn" onclick="toggleFavoriteCurrent()" data-favorite-btn aria-label="Toggle Favorite" class="hidden sm:block text-[var(--text-muted)] hover:text-red-400 transition p-1" title="Save to Favorites">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
       </button>
     </div>
@@ -548,20 +609,20 @@
     <div class="flex flex-col items-center justify-center flex-1 max-w-xl px-2">
       <!-- Buttons -->
       <div class="flex items-center space-x-4 md:space-x-6 mb-1 md:mb-1.5">
-        <button id="btn-shuffle" onclick="toggleShuffle()" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition p-1 hidden sm:block" title="Shuffle">
+        <button id="btn-shuffle" onclick="toggleShuffle()" aria-label="Toggle Shuffle" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition p-1 hidden sm:block" title="Shuffle">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h2m8 0h2a2 2 0 012 2v2m0 6v2a2 2 0 01-2 2h-2M4 14l4 4m0 0l4-4m-4 4V8m16 2l-4-4m0 0l-4 4m4-4v10"/></svg>
         </button>
-        <button onclick="prevTrack()" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition p-1" title="Previous">
+        <button onclick="prevTrack()" aria-label="Previous Track" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition p-1" title="Previous">
           <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
         </button>
-        <button id="btn-play" onclick="togglePlay()" class="w-9 h-9 md:w-10 md:h-10 rounded-full bg-[var(--text-primary)] text-black hover:scale-105 transition flex items-center justify-center shadow-lg" title="Play/Pause">
+        <button id="btn-play" onclick="togglePlay()" aria-label="Play or Pause" class="w-9 h-9 md:w-10 md:h-10 rounded-full bg-[var(--text-primary)] text-black hover:scale-105 transition flex items-center justify-center shadow-lg" title="Play/Pause">
           <svg id="icon-play" class="w-5 h-5 fill-current ml-0.5" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
           <svg id="icon-pause" class="w-5 h-5 fill-current hidden" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
         </button>
-        <button onclick="nextTrack()" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition p-1" title="Next">
+        <button onclick="nextTrack()" aria-label="Next Track" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition p-1" title="Next">
           <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
         </button>
-        <button id="btn-repeat" onclick="toggleRepeat()" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition p-1 hidden sm:block" title="Repeat Mode">
+        <button id="btn-repeat" onclick="toggleRepeat()" aria-label="Toggle Repeat" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition p-1 hidden sm:block" title="Repeat Mode">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
         </button>
       </div>
@@ -586,7 +647,7 @@
 
     <!-- RIGHT: Controls -->
     <div class="flex items-center justify-end space-x-2 md:space-x-3 w-1/4">
-      <button onclick="toggleLyrics()" id="btn-lyrics" class="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-elevated)] transition" title="Toggle Lyrics">
+      <button onclick="toggleLyrics()" id="btn-lyrics" aria-label="Toggle Lyrics" class="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-elevated)] transition" title="Toggle Lyrics">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
       </button>
 
@@ -600,7 +661,7 @@
 
       <!-- Volume Slider (Desktop) -->
       <div class="hidden md:flex items-center space-x-2 slider-container w-28">
-        <button onclick="toggleMute()" id="btn-volume" class="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+        <button onclick="toggleMute()" id="btn-volume" aria-label="Toggle Mute" class="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
         </button>
         <input 
@@ -664,7 +725,7 @@
         <h2 id="mob-sheet-title" class="text-xl font-bold tracking-tight text-[var(--text-primary)] truncate">No song playing</h2>
         <p id="mob-sheet-artist" class="text-sm text-[var(--text-muted)] truncate mt-0.5">Select from library</p>
       </div>
-      <button id="mob-sheet-heart-btn" onclick="toggleFavoriteCurrent()" class="p-2 text-[var(--text-muted)] hover:text-red-400">
+      <button id="mob-sheet-heart-btn" onclick="toggleFavoriteCurrent()" data-favorite-btn aria-label="Toggle Favorite" class="p-2 text-[var(--text-muted)] hover:text-red-400">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
       </button>
     </div>
@@ -712,6 +773,10 @@
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
         <span>View Lyrics</span>
       </button>
+      <div class="flex items-center space-x-2 slider-container">
+          <svg class="w-3.5 h-3.5 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
+          <input type="range" id="mob-volume" min="0" max="100" value="80" oninput="handleVolumeInput(this.value)" class="w-24 h-1">
+      </div>
       <span class="text-[var(--text-muted)] font-mono text-[11px]" id="mob-output-format">Lossless Stream</span>
     </div>
   </div>
@@ -1018,6 +1083,13 @@
       fetchLyricsForTrack(track.id);
       showToast(`Playing "${track.title}"`);
       updateMediaSession(track);
+      if (track && track.id) {
+        fetch('/api/history/play', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ track_id: track.id })
+        }).catch(() => {});
+      }
     }
 
     function togglePlay() {
@@ -1476,7 +1548,7 @@
         const fmt = getFormatBadge(t);
 
         return `
-          <tr class="hover:bg-[var(--bg-surface-elevated)] transition group cursor-pointer ${isCurrent ? 'bg-[var(--accent-dim)]/30' : ''}">
+          <tr oncontextmenu="showContextMenu(event, '${escapeHtml(t.id)}')" class="hover:bg-[var(--bg-surface-elevated)] transition group cursor-pointer ${isCurrent ? 'bg-[var(--accent-dim)]/30' : ''}">
             <td class="p-4 text-center font-mono text-[var(--text-muted)]" onclick="playTrackById('${escapeHtml(t.id)}')">
               ${isCurrent && state.isPlaying ? '<span class="text-[var(--accent)] font-bold">▶</span>' : (idx + 1)}
             </td>
@@ -1990,7 +2062,261 @@
     }
 
     function openShortcutsModal() {
-      alert("Keyboard Shortcuts:\n• Space: Play / Pause\n• Left / Right: Seek -10s / +10s\n• M: Mute / Unmute\n• Q: Open Queue\n• L: Toggle Lyrics\n• Esc: Close modals");
+      const modal = document.getElementById("shortcuts-modal");
+      if (modal) modal.classList.remove("hidden");
+    }
+
+    function closeShortcutsModal() {
+      const modal = document.getElementById("shortcuts-modal");
+      if (modal) modal.classList.add("hidden");
+    }
+
+    // Context Menu System
+    let _ctxMenuTrackId = null;
+    function showContextMenu(e, trackId) {
+      e.preventDefault();
+      _ctxMenuTrackId = trackId;
+      const menu = document.getElementById("context-menu");
+      if (!menu) return;
+      menu.style.left = Math.min(e.clientX, window.innerWidth - 220) + "px";
+      menu.style.top = Math.min(e.clientY, window.innerHeight - 320) + "px";
+      menu.classList.remove("hidden");
+
+      const isFav = state.favorites.has(trackId);
+      const favBtn = menu.querySelector('[data-action="toggle-fav"]');
+      if (favBtn) {
+        favBtn.innerHTML = isFav
+          ? `<span class="text-base text-red-500">♥</span><span>Remove from Favorites</span>`
+          : `<span class="text-base">♡</span><span>Add to Favorites</span>`;
+      }
+    }
+
+    function handleContextAction(action) {
+      const menu = document.getElementById("context-menu");
+      if (menu) menu.classList.add("hidden");
+      if (!_ctxMenuTrackId) return;
+      const trackId = _ctxMenuTrackId;
+      const track = state.tracks.find(t => t.id === trackId);
+      if (!track) return;
+
+      switch (action) {
+        case "play-next": {
+          const curIdx = state.currentTrackIndex;
+          state.queue.splice(curIdx + 1, 0, track);
+          renderQueueTab();
+          showToast(`Playing next: "${track.title}"`);
+          break;
+        }
+        case "add-queue": {
+          state.queue.push(track);
+          renderQueueTab();
+          showToast(`Added to queue: "${track.title}"`);
+          break;
+        }
+        case "add-playlist": {
+          addToPlaylistPrompt([track.id]);
+          break;
+        }
+        case "toggle-fav": {
+          toggleFavorite(track.id);
+          break;
+        }
+        case "go-artist": {
+          if (track.artist) {
+            switchTab("search");
+            const inp = window.innerWidth >= 768 ? document.getElementById("global-search-input") : document.getElementById("mobile-search-input");
+            if (inp) inp.value = track.artist;
+            handleSearchInput(track.artist);
+          }
+          break;
+        }
+        case "go-album": {
+          if (track.album) {
+            filterByAlbum(track.album);
+          }
+          break;
+        }
+        case "download": {
+          window.location.href = `/api/file/${encodeURIComponent(track.id)}`;
+          break;
+        }
+      }
+    }
+
+    document.addEventListener("click", (e) => {
+      const menu = document.getElementById("context-menu");
+      if (menu && !menu.contains(e.target)) {
+        menu.classList.add("hidden");
+      }
+    });
+
+    // Playlist Management
+    async function loadPlaylists() {
+      try {
+        const res = await fetch("/api/playlists");
+        if (!res.ok) return;
+        const playlists = await res.json();
+        const container = document.getElementById("playlists-list");
+        if (!container) return;
+        if (!playlists.length) {
+          container.innerHTML = '<p class="text-xs text-[var(--text-muted)] px-3 py-2 italic">No playlists yet</p>';
+          return;
+        }
+        container.innerHTML = playlists.map(pl => `
+          <button onclick="loadPlaylistDetail('${escapeHtml(pl.id)}')" class="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition text-left">
+            <span class="w-6 h-6 rounded bg-purple-500/20 text-purple-400 flex items-center justify-center text-xs">♫</span>
+            <span class="truncate flex-1">${escapeHtml(pl.name)}</span>
+            <span class="text-[10px] text-[var(--text-muted)]">${pl.track_count || 0}</span>
+          </button>
+        `).join("");
+      } catch (err) {
+        console.error("loadPlaylists error:", err);
+      }
+    }
+
+    async function createPlaylistPrompt() {
+      const name = prompt("Playlist name:");
+      if (!name || !name.trim()) return;
+      try {
+        const res = await fetch("/api/playlists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name.trim() })
+        });
+        if (res.ok) {
+          showToast("Playlist created!");
+          loadPlaylists();
+        } else {
+          showToast("Failed to create playlist");
+        }
+      } catch (err) {
+        showToast("Failed to create playlist");
+      }
+    }
+
+    async function loadPlaylistDetail(playlistId) {
+      try {
+        const res = await fetch("/api/playlists/" + encodeURIComponent(playlistId));
+        if (!res.ok) return;
+        const pl = await res.json();
+        if (pl.tracks && pl.tracks.length) {
+          state.queue = [...pl.tracks];
+          state.currentTrackIndex = 0;
+          playTrackAtIndex(0);
+          showToast(`Playing playlist: "${pl.name}"`);
+        } else {
+          showToast(`Playlist "${pl.name}" is empty`);
+        }
+      } catch (err) {
+        showToast("Failed to load playlist");
+      }
+    }
+
+    async function addToPlaylistPrompt(trackIds) {
+      try {
+        const res = await fetch("/api/playlists");
+        if (!res.ok) return;
+        const playlists = await res.json();
+        if (!playlists.length) {
+          const name = prompt("No playlists yet. Create one:");
+          if (!name || !name.trim()) return;
+          const createRes = await fetch("/api/playlists", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: name.trim() })
+          });
+          if (!createRes.ok) return;
+          const pl = await createRes.json();
+          await fetch(`/api/playlists/${encodeURIComponent(pl.id)}/tracks`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ track_ids: trackIds })
+          });
+          showToast(`Added to new playlist "${name.trim()}"!`);
+          loadPlaylists();
+          return;
+        }
+
+        const choices = playlists.map((pl, i) => `${i + 1}. ${pl.name}`).join("\n");
+        const pick = prompt("Add to which playlist?\n" + choices);
+        if (!pick) return;
+        const idx = parseInt(pick) - 1;
+        if (isNaN(idx) || idx < 0 || idx >= playlists.length) return;
+        const chosen = playlists[idx];
+        const addRes = await fetch(`/api/playlists/${encodeURIComponent(chosen.id)}/tracks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ track_ids: trackIds })
+        });
+        if (addRes.ok) {
+          showToast(`Added to "${chosen.name}"!`);
+          loadPlaylists();
+        } else {
+          showToast("Failed to add track to playlist");
+        }
+      } catch (err) {
+        showToast("Error adding to playlist");
+      }
+    }
+
+    // Recently Played History
+    async function loadRecentlyPlayed() {
+      try {
+        const res = await fetch("/api/history/recent?limit=8");
+        if (!res.ok) return;
+        const tracks = await res.json();
+        const section = document.getElementById("recently-played-section");
+        const list = document.getElementById("recently-played-list");
+        if (!section || !list) return;
+        if (!tracks.length) {
+          section.classList.add("hidden");
+          return;
+        }
+        section.classList.remove("hidden");
+        list.innerHTML = tracks.map(t => {
+          const artUrl = `/api/artwork/${encodeURIComponent(t.id)}`;
+          return `
+            <div class="p-3 flex items-center justify-between hover:bg-[var(--bg-surface-elevated)] transition cursor-pointer" onclick="playTrackById('${escapeHtml(t.id)}')">
+              <div class="flex items-center space-x-3 min-w-0 flex-1">
+                <img src="${artUrl}" onerror="this.onerror=null;this.src=DEFAULT_ART" class="w-10 h-10 rounded-lg object-cover shrink-0">
+                <div class="min-w-0 flex-1">
+                  <p class="font-semibold text-xs truncate text-[var(--text-primary)]">${escapeHtml(t.title)}</p>
+                  <p class="text-[11px] text-[var(--text-muted)] truncate">${escapeHtml(t.artist || 'Unknown Artist')} · ${formatTime(t.duration)}</p>
+                </div>
+              </div>
+              <button class="w-8 h-8 rounded-full bg-[var(--accent)] text-black flex items-center justify-center hover:scale-105 transition shrink-0 ml-2" title="Play">
+                <span class="text-xs ml-0.5">▶</span>
+              </button>
+            </div>
+          `;
+        }).join("");
+      } catch (err) {
+        console.error("loadRecentlyPlayed error:", err);
+      }
+    }
+
+    // Server-Sent Events for real-time progress
+    let _eventSource = null;
+    function connectSSE() {
+      if (_eventSource) return;
+      try {
+        _eventSource = new EventSource("/api/events");
+        _eventSource.addEventListener("download_complete", (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            showToast(`✓ Downloaded: "${data.title || 'Track'}"`);
+            loadLibraryData();
+            loadRecentlyPlayed();
+          } catch (_) {}
+        });
+        _eventSource.onerror = () => {
+          if (_eventSource) {
+            _eventSource.close();
+            _eventSource = null;
+          }
+          setTimeout(connectSSE, 5000);
+        };
+      } catch (_) {}
     }
 
     function setTheme(theme) {
@@ -2104,11 +2430,16 @@
         toggleMute();
       } else if (e.key === "q") {
         switchTab("queue");
+      } else if (e.key === "?") {
+        openShortcutsModal();
       } else if (e.key === "Escape") {
         closeSettingsModal();
         closeConvertModal();
+        closeShortcutsModal();
         closeMobileNowPlaying();
         toggleLyrics(false);
+        const menu = document.getElementById("context-menu");
+        if (menu) menu.classList.add("hidden");
       }
     });
 
@@ -2117,7 +2448,62 @@
       const savedTheme = localStorage.getItem("zoink_theme") || "amoled";
       setTheme(savedTheme);
       loadLibraryData();
+      loadPlaylists();
+      loadRecentlyPlayed();
+      connectSSE();
     });
   </script>
+  <div id="toast-container"></div>
+
+  <!-- Context Menu -->
+  <div id="context-menu" class="hidden fixed z-[9998] w-52 bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] rounded-xl shadow-2xl overflow-hidden py-1.5" style="backdrop-filter:blur(20px)">
+      <button onclick="handleContextAction('play-next')" class="w-full text-left px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)] flex items-center space-x-3 transition">
+          <span class="text-base">▶</span><span>Play Next</span>
+      </button>
+      <button onclick="handleContextAction('add-queue')" class="w-full text-left px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)] flex items-center space-x-3 transition">
+          <span class="text-base">➕</span><span>Add to Queue</span>
+      </button>
+      <button onclick="handleContextAction('add-playlist')" class="w-full text-left px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)] flex items-center space-x-3 transition">
+          <span class="text-base">📋</span><span>Add to Playlist…</span>
+      </button>
+      <div class="my-1.5 border-t border-[var(--border-subtle)]"></div>
+      <button data-action="toggle-fav" onclick="handleContextAction('toggle-fav')" class="w-full text-left px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)] flex items-center space-x-3 transition">
+          <span class="text-base">♡</span><span>Add to Favorites</span>
+      </button>
+      <button onclick="handleContextAction('go-artist')" class="w-full text-left px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)] flex items-center space-x-3 transition">
+          <span class="text-base">🎤</span><span>Go to Artist</span>
+      </button>
+      <button onclick="handleContextAction('go-album')" class="w-full text-left px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)] flex items-center space-x-3 transition">
+          <span class="text-base">💿</span><span>Go to Album</span>
+      </button>
+      <div class="my-1.5 border-t border-[var(--border-subtle)]"></div>
+      <button onclick="handleContextAction('download')" class="w-full text-left px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)] flex items-center space-x-3 transition">
+          <span class="text-base">📥</span><span>Download File</span>
+      </button>
+  </div>
+
+  <!-- Keyboard Shortcuts Modal -->
+  <div id="shortcuts-modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div class="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+          <div class="flex items-center justify-between mb-5">
+              <h3 class="text-lg font-bold text-[var(--text-primary)]">Keyboard Shortcuts</h3>
+              <button onclick="document.getElementById('shortcuts-modal').classList.add('hidden')" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+          </div>
+          <div class="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+              <div class="flex items-center justify-between"><span class="text-[var(--text-muted)]">Play / Pause</span><kbd class="px-2 py-0.5 rounded bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] font-mono text-xs">Space</kbd></div>
+              <div class="flex items-center justify-between"><span class="text-[var(--text-muted)]">Seek ±5s</span><kbd class="px-2 py-0.5 rounded bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] font-mono text-xs">← →</kbd></div>
+              <div class="flex items-center justify-between"><span class="text-[var(--text-muted)]">Next / Prev</span><kbd class="px-2 py-0.5 rounded bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] font-mono text-xs">⇧←  ⇧→</kbd></div>
+              <div class="flex items-center justify-between"><span class="text-[var(--text-muted)]">Volume ±5%</span><kbd class="px-2 py-0.5 rounded bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] font-mono text-xs">↑ ↓</kbd></div>
+              <div class="flex items-center justify-between"><span class="text-[var(--text-muted)]">Mute</span><kbd class="px-2 py-0.5 rounded bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] font-mono text-xs">M</kbd></div>
+              <div class="flex items-center justify-between"><span class="text-[var(--text-muted)]">Shuffle</span><kbd class="px-2 py-0.5 rounded bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] font-mono text-xs">S</kbd></div>
+              <div class="flex items-center justify-between"><span class="text-[var(--text-muted)]">Repeat</span><kbd class="px-2 py-0.5 rounded bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] font-mono text-xs">R</kbd></div>
+              <div class="flex items-center justify-between"><span class="text-[var(--text-muted)]">Lyrics</span><kbd class="px-2 py-0.5 rounded bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] font-mono text-xs">L</kbd></div>
+              <div class="flex items-center justify-between"><span class="text-[var(--text-muted)]">Focus Search</span><kbd class="px-2 py-0.5 rounded bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] font-mono text-xs">/</kbd></div>
+              <div class="flex items-center justify-between"><span class="text-[var(--text-muted)]">This Help</span><kbd class="px-2 py-0.5 rounded bg-[var(--bg-surface-elevated)] border border-[var(--border-subtle)] font-mono text-xs">?</kbd></div>
+          </div>
+      </div>
+  </div>
 </body>
 </html>

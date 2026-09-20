@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import time
+import queue as stdlib_queue
 import mimetypes
 import os
 import shutil
@@ -35,6 +38,23 @@ _art_cache_lock = threading.Lock()
 
 _AUDIO_EXTS = {".mp3", ".m4a", ".flac", ".ogg", ".opus", ".wav", ".aac"}
 _CHUNK = 64 * 1024
+
+# SSE event subscribers for real-time download progress
+_sse_subscribers: list[stdlib_queue.Queue] = []
+_sse_lock = threading.Lock()
+
+def _broadcast_sse(event_type: str, data: dict) -> None:
+    """Broadcast an event to all SSE subscribers."""
+    msg = f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+    with _sse_lock:
+        dead = []
+        for q in _sse_subscribers:
+            try:
+                q.put_nowait(msg)
+            except Exception:
+                dead.append(q)
+        for q in dead:
+            _sse_subscribers.remove(q)
 
 
 def _get_config() -> Config:
@@ -345,7 +365,7 @@ def api_track(track_id):
     return jsonify(t)
 
 
-@app.route("/api/library/rescan", methods=["POST", "GET"])
+@app.route("/api/library/rescan", methods=["POST"])
 def api_library_rescan():
     lib = _get_library()
     added = lib.scan_directory(prune=True)
@@ -390,7 +410,10 @@ def api_artwork(track_id):
     with _art_cache_lock:
         if str(fp) in _art_cache:
             data, mime = _art_cache[str(fp)]
-            return Response(data, content_type=mime)
+            resp = Response(data, content_type=mime)
+            resp.headers["Cache-Control"] = "public, max-age=86400, immutable"
+            resp.headers["ETag"] = hashlib.md5(data).hexdigest()
+            return resp
 
     # Extract artwork from audio file
     try:
@@ -401,7 +424,10 @@ def api_artwork(track_id):
                 if len(_art_cache) > 200:
                     _art_cache.clear()
                 _art_cache[str(fp)] = (data, mime)
-            return Response(data, content_type=mime)
+            resp = Response(data, content_type=mime)
+            resp.headers["Cache-Control"] = "public, max-age=86400, immutable"
+            resp.headers["ETag"] = hashlib.md5(data).hexdigest()
+            return resp
     except Exception:
         pass
 
@@ -410,57 +436,63 @@ def api_artwork(track_id):
 
 @app.route("/api/lyrics/<path:track_id>")
 def api_lyrics(track_id):
-    res = _find_track_file(track_id)
-    if not res:
-        return jsonify({"lyrics": ""})
-    t, fp = res
+    def _get_lyrics():
+        res = _find_track_file(track_id)
+        if not res:
+            return ""
+        t, fp = res
 
-    # 1. Try reading embedded lyrics
-    try:
-        from mutagen.flac import FLAC
-        from mutagen.id3 import ID3
-        from mutagen.mp4 import MP4
-        from mutagen.oggopus import OggOpus
-        from mutagen.oggvorbis import OggVorbis
+        # 1. Try reading embedded lyrics
+        try:
+            from mutagen.flac import FLAC
+            from mutagen.id3 import ID3
+            from mutagen.mp4 import MP4
+            from mutagen.oggopus import OggOpus
+            from mutagen.oggvorbis import OggVorbis
 
-        ext = fp.suffix.lower()
-        if ext == ".mp3":
-            tags = ID3(fp)
-            for k in tags:
-                if k.startswith("USLT"):
-                    return jsonify({"lyrics": str(tags[k].text)})
-        elif ext in (".m4a", ".mp4"):
-            audio = MP4(fp)
-            if audio.tags and "\xa9lyr" in audio.tags:
-                return jsonify({"lyrics": str(audio.tags["\xa9lyr"][0])})
-        elif ext == ".flac":
-            audio = FLAC(fp)
-            lyrics = audio.get("lyrics", [""])[0]
-            if lyrics:
-                return jsonify({"lyrics": lyrics})
-        elif ext in (".ogg", ".opus"):
-            audio = OggOpus(fp) if ext == ".opus" else OggVorbis(fp)
-            lyrics = audio.get("lyrics", [""])[0]
-            if lyrics:
-                return jsonify({"lyrics": lyrics})
-    except Exception:
-        pass
+            ext = fp.suffix.lower()
+            if ext == ".mp3":
+                tags = ID3(fp)
+                for k in tags:
+                    if k.startswith("USLT"):
+                        return str(tags[k].text)
+            elif ext in (".m4a", ".mp4"):
+                audio = MP4(fp)
+                if audio.tags and "\xa9lyr" in audio.tags:
+                    return str(audio.tags["\xa9lyr"][0])
+            elif ext == ".flac":
+                audio = FLAC(fp)
+                lyrics = audio.get("lyrics", [""])[0]
+                if lyrics:
+                    return lyrics
+            elif ext in (".ogg", ".opus"):
+                audio = OggOpus(fp) if ext == ".opus" else OggVorbis(fp)
+                lyrics = audio.get("lyrics", [""])[0]
+                if lyrics:
+                    return lyrics
+        except Exception:
+            pass
 
-    # 2. Dynamic fetch fallback
-    if t:
-        from zoink.lyrics import fetch_lyrics
-        fetched = fetch_lyrics(
-            track_id=t.get("id", ""),
-            source=t.get("source", "youtube"),
-            title=t.get("title", ""),
-            artist=t.get("artist", ""),
-            album=t.get("album", ""),
-            duration=int(t.get("duration") or 0),
-        )
-        if fetched:
-            return jsonify({"lyrics": fetched})
+        # 2. Dynamic fetch fallback
+        if t:
+            from zoink.lyrics import fetch_lyrics
+            fetched = fetch_lyrics(
+                track_id=t.get("id", ""),
+                source=t.get("source", "youtube"),
+                title=t.get("title", ""),
+                artist=t.get("artist", ""),
+                album=t.get("album", ""),
+                duration=int(t.get("duration") or 0),
+            )
+            if fetched:
+                return fetched
 
-    return jsonify({"lyrics": ""})
+        return ""
+
+    lyrics = _get_lyrics()
+    resp = jsonify({"lyrics": lyrics})
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
 
 
 # ---------------------------------------------------------------------------
@@ -564,9 +596,15 @@ def _start_single_download(track_data: dict, output_format: Optional[str] = None
     )
 
     def _worker():
-        job = dm.download(track, output_format=output_format, quality=quality)
+        def _on_progress(job: DownloadJob):
+            _broadcast_sse("download_progress", job.to_dict())
+
+        job = dm.download(track, on_progress=_on_progress, output_format=output_format, quality=quality)
         if job.state == DownloadState.DONE and job.filepath:
             lib.add_track(job.filepath, job.track)
+            _broadcast_sse("download_complete", job.to_dict())
+        elif job.state in (DownloadState.FAILED, DownloadState.CANCELLED):
+            _broadcast_sse("download_failed", job.to_dict())
 
     _bg_pool.submit(_worker)
     return jsonify({"status": "queued", "id": track.id, "title": track.title})
@@ -653,10 +691,17 @@ def api_download_bulk_start():
         tracks.append(t)
 
     def _worker():
-        def on_complete(job: DownloadJob):
+        def _on_progress(job: DownloadJob):
+            _broadcast_sse("download_progress", job.to_dict())
+
+        def _on_complete(job: DownloadJob):
             if job.state == DownloadState.DONE and job.filepath:
                 lib.add_track(job.filepath, job.track)
-        dm.download_batch(tracks, on_complete=on_complete)
+                _broadcast_sse("download_complete", job.to_dict())
+            elif job.state in (DownloadState.FAILED, DownloadState.CANCELLED):
+                _broadcast_sse("download_failed", job.to_dict())
+
+        dm.download_batch(tracks, on_progress=_on_progress, on_complete=_on_complete)
 
     _bg_pool.submit(_worker)
     return jsonify({"status": "queued", "count": len(tracks)})
@@ -672,6 +717,8 @@ def api_download_queue():
 def api_download_cancel(track_id):
     dm = _get_downloader()
     ok = dm.cancel_job(track_id)
+    if ok:
+        _broadcast_sse("download_cancelled", {"id": track_id})
     return jsonify({"cancelled": ok, "id": track_id})
 
 
@@ -808,6 +855,145 @@ def api_download_bulk():
                 files.append((fp, arc))
 
     return _stream_zip_archive(files, "ZoinK_Selected.zip")
+
+
+# ---------------------------------------------------------------------------
+# Favorites API
+# ---------------------------------------------------------------------------
+
+@app.route("/api/favorites", methods=["GET"])
+def api_favorites():
+    lib = _get_library()
+    return jsonify(lib.get_favorites())
+
+@app.route("/api/favorites/<track_id>", methods=["POST"])
+def api_toggle_favorite(track_id):
+    lib = _get_library()
+    is_fav = lib.toggle_favorite(track_id)
+    return jsonify({"favorited": is_fav, "track_id": track_id})
+
+@app.route("/api/favorites/<track_id>/status", methods=["GET"])
+def api_favorite_status(track_id):
+    lib = _get_library()
+    return jsonify({"favorited": lib.is_favorite(track_id), "track_id": track_id})
+
+# ---------------------------------------------------------------------------
+# Playlists API
+# ---------------------------------------------------------------------------
+
+@app.route("/api/playlists", methods=["GET"])
+def api_playlists():
+    lib = _get_library()
+    return jsonify(lib.get_playlists())
+
+@app.route("/api/playlists", methods=["POST"])
+def api_create_playlist():
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Playlist name is required"}), 400
+    lib = _get_library()
+    pl = lib.create_playlist(name, data.get("description", ""))
+    return jsonify(pl), 201
+
+@app.route("/api/playlists/<playlist_id>", methods=["GET"])
+def api_get_playlist(playlist_id):
+    lib = _get_library()
+    pl = lib.get_playlist(playlist_id)
+    if not pl:
+        return jsonify({"error": "Playlist not found"}), 404
+    return jsonify(pl)
+
+@app.route("/api/playlists/<playlist_id>", methods=["PUT"])
+def api_update_playlist(playlist_id):
+    data = request.get_json(silent=True) or {}
+    lib = _get_library()
+    lib.update_playlist(playlist_id, name=data.get("name"), description=data.get("description"))
+    return jsonify({"ok": True})
+
+@app.route("/api/playlists/<playlist_id>", methods=["DELETE"])
+def api_delete_playlist(playlist_id):
+    lib = _get_library()
+    lib.delete_playlist(playlist_id)
+    return jsonify({"ok": True})
+
+@app.route("/api/playlists/<playlist_id>/tracks", methods=["POST"])
+def api_add_to_playlist(playlist_id):
+    data = request.get_json(silent=True) or {}
+    track_ids = data.get("track_ids", [])
+    if not track_ids:
+        return jsonify({"error": "track_ids required"}), 400
+    lib = _get_library()
+    added = lib.add_to_playlist(playlist_id, track_ids)
+    return jsonify({"added": added})
+
+@app.route("/api/playlists/<playlist_id>/tracks", methods=["DELETE"])
+def api_remove_from_playlist(playlist_id):
+    data = request.get_json(silent=True) or {}
+    track_ids = data.get("track_ids", [])
+    if not track_ids:
+        return jsonify({"error": "track_ids required"}), 400
+    lib = _get_library()
+    removed = lib.remove_from_playlist(playlist_id, track_ids)
+    return jsonify({"removed": removed})
+
+# ---------------------------------------------------------------------------
+# Play History API
+# ---------------------------------------------------------------------------
+
+@app.route("/api/history/play", methods=["POST"])
+def api_record_play():
+    data = request.get_json(silent=True) or {}
+    track_id = data.get("track_id", "").strip()
+    if not track_id:
+        return jsonify({"error": "track_id required"}), 400
+    lib = _get_library()
+    lib.record_play(track_id)
+    return jsonify({"ok": True})
+
+@app.route("/api/history/recent", methods=["GET"])
+def api_recently_played():
+    lib = _get_library()
+    limit = min(int(request.args.get("limit", 30)), 100)
+    return jsonify(lib.get_recently_played(limit))
+
+# ---------------------------------------------------------------------------
+# Server-Sent Events for Download Progress
+# ---------------------------------------------------------------------------
+
+@app.route("/api/events")
+def api_sse():
+    """SSE endpoint for real-time download progress updates."""
+    q = stdlib_queue.Queue(maxsize=50)
+    with _sse_lock:
+        _sse_subscribers.append(q)
+
+    def stream():
+        try:
+            yield "event: connected\ndata: {}\n\n"
+            while True:
+                try:
+                    msg = q.get(timeout=30)
+                    yield msg
+                except stdlib_queue.Empty:
+                    yield ": keepalive\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            with _sse_lock:
+                if q in _sse_subscribers:
+                    _sse_subscribers.remove(q)
+
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
 
 
 def _track_to_dict(t: TrackResult) -> dict:

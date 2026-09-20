@@ -62,3 +62,25 @@ def test_cli_search_argparse(monkeypatch):
             code = main(["search", "Test Query", "--yes"])
             assert code == 0
             assert mock_dl.called
+
+
+def test_cli_convert_search_query(tmp_path, capsys):
+    from unittest.mock import patch
+    from zoink.config import Config
+    from zoink.library import Library
+    from zoink.provider import TrackResult
+
+    cfg = Config.get()
+    cfg["download_dir"] = str(tmp_path)
+    lib = Library(cfg)
+    fake_file = tmp_path / "song.mp3"
+    fake_file.write_bytes(b"dummy")
+    tr = TrackResult(id="c1", title="Daft Punk", artist="Guy-Manuel", filepath=str(fake_file))
+    lib.add_track(fake_file, tr)
+
+    with patch("zoink.converter.convert_library_track", return_value=(True, tmp_path / "song.flac", None)) as mock_conv:
+        code = main(["convert", "Daft", "-f", "flac"])
+        assert code == 0
+        assert mock_conv.called
+        out = capsys.readouterr().out
+        assert "Successfully converted" in out

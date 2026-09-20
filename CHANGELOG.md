@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-20
+
+### Added
+- **Full Favorites System**: Persistent SQLite `favorites` table, REST endpoints (`GET/POST /api/favorites`, `GET /api/favorites/:id/status`), web player heart buttons, and library filter tab.
+- **Custom Playlists**: SQLite playlist schema with cascading deletes, complete REST CRUD API (`/api/playlists`), desktop sidebar integration, and track context menu actions.
+- **Listening History & Recently Played**: SQLite play history tracking, REST endpoints (`POST /api/history/play`, `GET /api/history/recent`), and dynamic home tab section.
+- **Real-Time Server-Sent Events (SSE)**: EventSource stream at `/api/events` broadcasting download progress, completions, and cancellations to web clients.
+- **Web UI Polish & Ergonomics**:
+  - Track row context menu: Play Next, Add to Queue, Add to Playlist, Toggle Favorite, Go to Artist/Album, Direct File Download.
+  - Animated multi-variant toast notification system (info, success, warning, error).
+  - Dedicated keyboard shortcuts modal accessible via <kbd>?</kbd>.
+  - Mobile now-playing sheet volume slider and responsive track controls.
+  - Full `prefers-reduced-motion` CSS and ARIA accessibility labels across controls.
+- **TUI Display Width & CJK Support**:
+  - Accurate East Asian / CJK wide-character display width alignment across all render screens.
+  - Mouse wheel scrolling support (`SCROLL_UP` / `SCROLL_DOWN`) for library and search results.
+  - Dynamic viewport height calculation adapting to any terminal dimensions.
+  - Download progress refresh throttling (10fps max) to eliminate flicker and high CPU usage.
+  - Audio player (`shutil.which`) lookup caching for instant playback responses.
+  - Contrast accessibility improvement in light theme.
+
+### Fixed
+- **CLI Convert Crash**: Fixed `AttributeError: 'Library' object has no attribute 'search_tracks'` in `zoink convert` by correctly delegating to `lib.search()`.
+- **SQLite Foreign Key Cascades**: Explicitly enabled `PRAGMA foreign_keys = ON;` on all database connections to properly cascade track and playlist deletions.
+- **Non-Deterministic History Pruning**: Added `id DESC` tiebreaker to `record_play` pruning query to prevent arbitrary deletion of same-second entries.
+- **Thread-Safe Track Deletion**: Added `Library.remove_track_by_path()` protected by `_DB_LOCK` to eliminate lock contention during format conversion.
+- **Custom Download Directory Creation**: Fixed premature fallback in `config.py` allowing custom persistent download paths to be created seamlessly.
+
 ## [0.3.0] - 2026-09-17
 
 ### Added

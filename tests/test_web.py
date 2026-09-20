@@ -234,4 +234,88 @@ def test_api_config_get_and_post(test_env):
     assert cfg.user_name == "Audiophile"
 
 
+def test_api_favorites(test_env):
+    _, lib, client, music_dir = test_env
+    f = music_dir / "fav_api.mp3"
+    f.write_bytes(b"data")
+    lib.add_track(f, TrackResult(id="fav_api_1", title="Fav API Song", source="youtube"))
+
+    # Initial status
+    res = client.get("/api/favorites/fav_api_1/status")
+    assert res.status_code == 200
+    assert res.get_json()["favorited"] is False
+
+    # Toggle on
+    res_toggle = client.post("/api/favorites/fav_api_1")
+    assert res_toggle.status_code == 200
+    assert res_toggle.get_json()["favorited"] is True
+
+    # Check favorites list
+    res_list = client.get("/api/favorites")
+    assert res_list.status_code == 200
+    favs = res_list.get_json()
+    assert len(favs) == 1
+    assert favs[0]["id"] == "fav_api_1"
+
+
+def test_api_playlists(test_env):
+    _, lib, client, music_dir = test_env
+    f = music_dir / "pl_api.mp3"
+    f.write_bytes(b"data")
+    lib.add_track(f, TrackResult(id="pl_api_1", title="Playlist API Song", source="youtube"))
+
+    # Create playlist
+    res_create = client.post("/api/playlists", json={"name": "Night Drive", "description": "Synthwave"})
+    assert res_create.status_code == 201
+    pl = res_create.get_json()
+    pl_id = pl["id"]
+    assert pl["name"] == "Night Drive"
+
+    # Add track
+    res_add = client.post(f"/api/playlists/{pl_id}/tracks", json={"track_ids": ["pl_api_1"]})
+    assert res_add.status_code == 200
+    assert res_add.get_json()["added"] == 1
+
+    # Get playlist detail
+    res_get = client.get(f"/api/playlists/{pl_id}")
+    assert res_get.status_code == 200
+    detail = res_get.get_json()
+    assert len(detail["tracks"]) == 1
+    assert detail["tracks"][0]["id"] == "pl_api_1"
+
+    # Delete playlist
+    res_del = client.delete(f"/api/playlists/{pl_id}")
+    assert res_del.status_code == 200
+    assert client.get(f"/api/playlists/{pl_id}").status_code == 404
+
+
+def test_api_play_history(test_env):
+    _, lib, client, music_dir = test_env
+    f = music_dir / "hist_api.mp3"
+    f.write_bytes(b"data")
+    lib.add_track(f, TrackResult(id="hist_api_1", title="History API Song", source="youtube"))
+
+    # Record play
+    res_play = client.post("/api/history/play", json={"track_id": "hist_api_1"})
+    assert res_play.status_code == 200
+    assert res_play.get_json()["ok"] is True
+
+    # Get recent plays
+    res_recent = client.get("/api/history/recent")
+    assert res_recent.status_code == 200
+    recent = res_recent.get_json()
+    assert len(recent) == 1
+    assert recent[0]["id"] == "hist_api_1"
+
+
+def test_api_sse_events(test_env):
+    _, _, client, _ = test_env
+    res = client.get("/api/events")
+    assert res.status_code == 200
+    assert res.mimetype == "text/event-stream"
+    first_chunk = next(res.response)
+    assert b"event: connected" in first_chunk
+
+
+
 

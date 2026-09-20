@@ -378,7 +378,7 @@ def _cmd_convert(args) -> int:
         # Match library track by ID or title query
         track = lib.get_track_by_id(args.target)
         if not track:
-            matches = lib.search_tracks(args.target)
+            matches = lib.search(args.target)
             if matches:
                 track = matches[0]
         if not track:

@@ -30,6 +30,7 @@ class Library:
         conn = sqlite3.connect(str(self._db_path), timeout=10)
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.execute("PRAGMA foreign_keys=ON;")
         return conn
 
     def _init_db(self) -> None:
@@ -66,6 +67,35 @@ class Library:
                     CREATE INDEX IF NOT EXISTS idx_title ON tracks(title);
                     CREATE INDEX IF NOT EXISTS idx_filepath ON tracks(filepath);
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_filepath_unique ON tracks(filepath);
+
+                    CREATE TABLE IF NOT EXISTS favorites (
+                        track_id TEXT PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+                        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+
+                    CREATE TABLE IF NOT EXISTS playlists (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        description TEXT DEFAULT '',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+
+                    CREATE TABLE IF NOT EXISTS playlist_tracks (
+                        playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+                        track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+                        position INTEGER NOT NULL DEFAULT 0,
+                        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (playlist_id, track_id)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_playlist_tracks_pos ON playlist_tracks(playlist_id, position);
+
+                    CREATE TABLE IF NOT EXISTS play_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+                        played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_play_history_time ON play_history(played_at DESC);
                     """
                 )
                 # Auto-migrate any existing database schema
@@ -538,6 +568,19 @@ class Library:
             finally:
                 conn.close()
 
+    def remove_track_by_path(self, filepath: str | Path) -> bool:
+        """Remove a track from the library by its file path."""
+        with _DB_LOCK:
+            conn = self._conn()
+            try:
+                conn.execute("DELETE FROM tracks WHERE filepath = ?", (str(filepath),))
+                conn.commit()
+                return True
+            except Exception:
+                return False
+            finally:
+                conn.close()
+
     def count(self) -> int:
         """Total track count."""
         with _DB_LOCK:
@@ -545,6 +588,193 @@ class Library:
             try:
                 row = conn.execute("SELECT COUNT(*) FROM tracks WHERE source NOT IN ('local', 'external')").fetchone()
                 return row[0] if row else 0
+            finally:
+                conn.close()
+
+    # Favorites
+    def toggle_favorite(self, track_id: str) -> bool:
+        """Toggle favorite status. Returns True if now favorited."""
+        with _DB_LOCK:
+            conn = self._conn()
+            try:
+                existing = conn.execute("SELECT 1 FROM favorites WHERE track_id = ?", (track_id,)).fetchone()
+                if existing:
+                    conn.execute("DELETE FROM favorites WHERE track_id = ?", (track_id,))
+                    conn.commit()
+                    return False
+                else:
+                    conn.execute("INSERT OR IGNORE INTO favorites (track_id) VALUES (?)", (track_id,))
+                    conn.commit()
+                    return True
+            finally:
+                conn.close()
+
+    def is_favorite(self, track_id: str) -> bool:
+        with _DB_LOCK:
+            conn = self._conn()
+            try:
+                return conn.execute("SELECT 1 FROM favorites WHERE track_id = ?", (track_id,)).fetchone() is not None
+            finally:
+                conn.close()
+
+    def get_favorites(self, limit: int = 200) -> list[dict]:
+        with _DB_LOCK:
+            conn = self._conn()
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    "SELECT t.* FROM tracks t INNER JOIN favorites f ON t.id = f.track_id ORDER BY f.added_at DESC LIMIT ?",
+                    (limit,)
+                ).fetchall()
+                return [dict(r) for r in rows]
+            finally:
+                conn.close()
+
+    # Playlists
+    def create_playlist(self, name: str, description: str = "") -> dict:
+        import uuid
+        pl_id = uuid.uuid4().hex[:12]
+        with _DB_LOCK:
+            conn = self._conn()
+            try:
+                conn.execute("INSERT INTO playlists (id, name, description) VALUES (?, ?, ?)", (pl_id, name, description))
+                conn.commit()
+                return {"id": pl_id, "name": name, "description": description, "track_count": 0}
+            finally:
+                conn.close()
+
+    def get_playlists(self) -> list[dict]:
+        with _DB_LOCK:
+            conn = self._conn()
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    """SELECT p.*, COUNT(pt.track_id) as track_count
+                       FROM playlists p LEFT JOIN playlist_tracks pt ON p.id = pt.playlist_id
+                       GROUP BY p.id ORDER BY p.updated_at DESC"""
+                ).fetchall()
+                return [dict(r) for r in rows]
+            finally:
+                conn.close()
+
+    def get_playlist(self, playlist_id: str) -> dict | None:
+        with _DB_LOCK:
+            conn = self._conn()
+            conn.row_factory = sqlite3.Row
+            try:
+                pl = conn.execute("SELECT * FROM playlists WHERE id = ?", (playlist_id,)).fetchone()
+                if not pl:
+                    return None
+                tracks = conn.execute(
+                    """SELECT t.* FROM tracks t
+                       INNER JOIN playlist_tracks pt ON t.id = pt.track_id
+                       WHERE pt.playlist_id = ? ORDER BY pt.position""",
+                    (playlist_id,)
+                ).fetchall()
+                result = dict(pl)
+                result["tracks"] = [dict(t) for t in tracks]
+                return result
+            finally:
+                conn.close()
+
+    def update_playlist(self, playlist_id: str, name: str = None, description: str = None) -> bool:
+        with _DB_LOCK:
+            conn = self._conn()
+            try:
+                updates = []
+                params = []
+                if name is not None:
+                    updates.append("name = ?")
+                    params.append(name)
+                if description is not None:
+                    updates.append("description = ?")
+                    params.append(description)
+                if not updates:
+                    return False
+                updates.append("updated_at = CURRENT_TIMESTAMP")
+                params.append(playlist_id)
+                conn.execute(f"UPDATE playlists SET {', '.join(updates)} WHERE id = ?", params)
+                conn.commit()
+                return conn.total_changes > 0
+            finally:
+                conn.close()
+
+    def delete_playlist(self, playlist_id: str) -> bool:
+        with _DB_LOCK:
+            conn = self._conn()
+            try:
+                conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?", (playlist_id,))
+                conn.execute("DELETE FROM playlists WHERE id = ?", (playlist_id,))
+                conn.commit()
+                return True
+            finally:
+                conn.close()
+
+    def add_to_playlist(self, playlist_id: str, track_ids: list[str]) -> int:
+        with _DB_LOCK:
+            conn = self._conn()
+            try:
+                max_pos = conn.execute(
+                    "SELECT COALESCE(MAX(position), -1) FROM playlist_tracks WHERE playlist_id = ?",
+                    (playlist_id,)
+                ).fetchone()[0]
+                added = 0
+                for tid in track_ids:
+                    try:
+                        max_pos += 1
+                        conn.execute(
+                            "INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)",
+                            (playlist_id, tid, max_pos)
+                        )
+                        added += 1
+                    except Exception:
+                        pass
+                conn.execute("UPDATE playlists SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (playlist_id,))
+                conn.commit()
+                return added
+            finally:
+                conn.close()
+
+    def remove_from_playlist(self, playlist_id: str, track_ids: list[str]) -> int:
+        with _DB_LOCK:
+            conn = self._conn()
+            try:
+                removed = 0
+                for tid in track_ids:
+                    conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?", (playlist_id, tid))
+                    removed += 1
+                conn.execute("UPDATE playlists SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (playlist_id,))
+                conn.commit()
+                return removed
+            finally:
+                conn.close()
+
+    # Play History
+    def record_play(self, track_id: str) -> None:
+        with _DB_LOCK:
+            conn = self._conn()
+            try:
+                conn.execute("INSERT INTO play_history (track_id) VALUES (?)", (track_id,))
+                # Keep only last 500 entries (with tiebreaker)
+                conn.execute(
+                    "DELETE FROM play_history WHERE id NOT IN (SELECT id FROM play_history ORDER BY played_at DESC, id DESC LIMIT 500)"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+    def get_recently_played(self, limit: int = 30) -> list[dict]:
+        with _DB_LOCK:
+            conn = self._conn()
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    """SELECT t.*, MAX(ph.played_at) as last_played
+                       FROM play_history ph INNER JOIN tracks t ON ph.track_id = t.id
+                       GROUP BY t.id ORDER BY MAX(ph.played_at) DESC LIMIT ?""",
+                    (limit,)
+                ).fetchall()
+                return [dict(r) for r in rows]
             finally:
                 conn.close()
 

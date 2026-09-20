@@ -29,6 +29,39 @@ from zoink.provider import AlbumResult, TrackResult
 from zoink.providers import YouTubeProvider
 from zoink.tui.theme import THEME_MODES, next_theme_mode
 
+try:
+    from prompt_toolkit.utils import get_cwidth
+except ImportError:
+    import unicodedata
+    def get_cwidth(char: str) -> int:
+        eaw = unicodedata.east_asian_width(char)
+        return 2 if eaw in ('F', 'W') else 1
+
+def _display_width(text: str) -> int:
+    """Calculate the display width of a string, accounting for wide characters."""
+    return sum(get_cwidth(ch) for ch in text)
+
+def _truncate_to_width(text: str, max_width: int, suffix: str = '…') -> str:
+    """Truncate text to fit within max_width display columns."""
+    if _display_width(text) <= max_width:
+        return text
+    suffix_w = _display_width(suffix)
+    target = max_width - suffix_w
+    w = 0
+    for i, ch in enumerate(text):
+        cw = get_cwidth(ch)
+        if w + cw > target:
+            return text[:i] + suffix
+        w += cw
+    return text
+
+def _pad_to_width(text: str, width: int, fill: str = ' ') -> str:
+    """Pad text with fill chars to reach the target display width."""
+    current = _display_width(text)
+    if current >= width:
+        return text
+    return text + fill * (width - current)
+
 
 class TUIPhase(enum.Enum):
     INPUT = "input"
@@ -93,6 +126,9 @@ class ZoinKTUI:
         " └── └─┘ ┴ ┘└┘ ┴ ┴",
     ]
     TAGLINE = "music downloader for your terminal. search. zoink. done."
+
+    _last_notify_time = 0
+    _NOTIFY_INTERVAL = 0.1  # 10fps max
 
     def __init__(
         self,
@@ -403,6 +439,18 @@ class ZoinKTUI:
             if mouse_event.event_type == MouseEventType.MOUSE_UP:
                 action()
                 return None
+            elif mouse_event.event_type == MouseEventType.SCROLL_UP:
+                # Move selection up
+                if hasattr(self, 'selected_index') and self.selected_index > 0:
+                    self.selected_index -= 1
+                    self.notify()
+                return None
+            elif mouse_event.event_type == MouseEventType.SCROLL_DOWN:
+                # Move selection down  
+                if hasattr(self, 'selected_index'):
+                    self.selected_index += 1
+                    self.notify()
+                return None
             return NotImplemented
         return _handler
 
@@ -634,12 +682,21 @@ class ZoinKTUI:
                     if job.filepath:
                         self.library.add_track(Path(job.filepath), track)
                     self.phase = TUIPhase.DONE
+                    self.notify()
                 elif job.state == DownloadState.CANCELLED:
                     if self.phase == TUIPhase.DOWNLOADING:
                         self.phase = self.prev_phase if self.prev_phase != TUIPhase.DOWNLOADING else TUIPhase.INPUT
+                    self.notify()
                 elif job.state == DownloadState.FAILED:
                     self.show_error(job.error or "Download failed. Please check network.")
-                self.notify()
+                    self.notify()
+                else:
+                    # Throttle progress-only updates to 10fps
+                    import time as _time
+                    now = _time.monotonic()
+                    if now - self._last_notify_time >= self._NOTIFY_INTERVAL:
+                        self._last_notify_time = now
+                        self.notify()
 
             def _worker():
                 try:
@@ -1147,23 +1204,36 @@ class ZoinKTUI:
             ("paplay", ["paplay", filepath]),
             ("aplay", ["aplay", filepath]),
         ]
+        # Cache the player lookup result
+        if not hasattr(self, '_cached_player_name') or self._cached_player_name is None:
+            self._cached_player_name = None
+            for name, _cmd in players:
+                if shutil.which(name):
+                    self._cached_player_name = name
+                    break
+        matched_cmd = None
         for name, cmd in players:
-            if shutil.which(name):
-                try:
-                    self.playback_process = subprocess.Popen(
-                        cmd,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        stdin=subprocess.DEVNULL,
-                        start_new_session=True,
-                    )
-                    self._playing_with_termux = (name == "termux-media-player")
-                    self.playing_track = track
-                    self.playback_status_text = f"▶ Playing: {track.get('title', 'Unknown')} — {track.get('artist', 'Unknown')}"
-                    self.notify()
-                    return
-                except Exception:
-                    continue
+            if name == self._cached_player_name:
+                matched_cmd = cmd
+                break
+        if matched_cmd:
+            name = self._cached_player_name
+            cmd = matched_cmd
+            try:
+                self.playback_process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                self._playing_with_termux = (name == "termux-media-player")
+                self.playing_track = track
+                self.playback_status_text = f"▶ Playing: {track.get('title', 'Unknown')} — {track.get('artist', 'Unknown')}"
+                self.notify()
+                return
+            except Exception:
+                pass
 
         self.library_status_message = "No media player found (mpv/ffplay/termux-media-player)."
         self.notify()
@@ -1666,14 +1736,14 @@ class ZoinKTUI:
 
         # 1. Logo
         for line in self.LOGO_LINES:
-            logo_pad = " " * max(0, (width - len(line)) // 2)
+            logo_pad = " " * max(0, (width - _display_width(line)) // 2)
             out.append(("", logo_pad))
             out.append(("class:logo", line + "\n"))
 
         out.append(("", "\n"))
 
         # 2. Tagline
-        tagline_pad = " " * max(0, (width - len(self.TAGLINE)) // 2)
+        tagline_pad = " " * max(0, (width - _display_width(self.TAGLINE)) // 2)
         out.append(("", tagline_pad))
         out.append(("class:tagline", self.TAGLINE + "\n"))
         out.append(("", "\n"))
@@ -1766,7 +1836,7 @@ class ZoinKTUI:
     def _render_probing_screen(self, width: int) -> list[tuple]:
         out: list[tuple] = []
         msg = f"  ⏳ {self.probing_text}"
-        pad = " " * max(0, (width - len(msg)) // 2)
+        pad = " " * max(0, (width - _display_width(msg)) // 2)
 
         out.append(("", "\n\n"))
         out.append(("", pad))
@@ -1774,13 +1844,13 @@ class ZoinKTUI:
         out.append(("", "\n"))
         return out
 
-    def _render_search_results_screen(self, width: int) -> list[tuple]:
+    def _render_search_results_screen(self, width: int, height: int = 24) -> list[tuple]:
         out: list[tuple] = []
         box_w = min(width - 4, 74)
         pad_x = " " * max(0, (width - box_w) // 2)
 
         header_text = f"Results for \"{self.search_query}\""
-        head_pad = " " * max(0, (width - len(header_text)) // 2)
+        head_pad = " " * max(0, (width - _display_width(header_text)) // 2)
         out.append(("", head_pad))
         out.append(("class:primary", header_text + "\n\n"))
 
@@ -1791,24 +1861,26 @@ class ZoinKTUI:
         title_w = max(18, int(inner_w * 0.46))
         artist_w = max(12, int(inner_w * 0.32))
         dur_w = 6
+        
+        max_visible = max(5, height - 14)
 
-        for idx, t in enumerate(self.search_results[:8]):
+        for idx, t in enumerate(self.search_results[:max_visible]):
             is_cursor = idx == self.search_cursor
             cursor_mark = "❯ " if is_cursor else "  "
 
-            title = (t.title[:title_w - 2] + "..") if len(t.title) > title_w else t.title
-            artist = (t.artist[:artist_w - 2] + "..") if len(t.artist) > artist_w else t.artist
+            title = _truncate_to_width(t.title, title_w)
+            artist = _truncate_to_width(t.artist, artist_w)
             duration = t.duration_str
 
             row_str = f" {cursor_mark}{idx + 1}. {title:<{title_w}} {artist:<{artist_w}} {duration:>{dur_w}} "
-            rem = inner_w - len(row_str)
+            rem = inner_w - _display_width(row_str)
             row_str += " " * max(0, rem)
 
             handler = self._click_handler(lambda i=idx: self._select_search_index(i))
             style = "class:choice.selected" if is_cursor else "class:choice.item"
 
             out.append(("class:border", f"{pad_x}│"))
-            out.append((style, row_str[:inner_w], handler))
+            out.append((style, _truncate_to_width(row_str, inner_w, ''), handler))
             out.append(("class:border", "│\n"))
 
         out.append(("class:border", f"{pad_x}│" + " " * (box_w - 2) + "│\n"))
@@ -1957,7 +2029,7 @@ class ZoinKTUI:
             self.choice_index = idx
             self.notify()
 
-    def _render_album_screen(self, width: int) -> list[tuple]:
+    def _render_album_screen(self, width: int, height: int = 24) -> list[tuple]:
         out: list[tuple] = []
         album = self.album_result
         if not album:
@@ -1967,7 +2039,7 @@ class ZoinKTUI:
         pad_x = " " * max(0, (width - box_w) // 2)
 
         header = f"{album.title} ({album.year or 'N/A'}) — {album.artist}"
-        head_pad = " " * max(0, (width - len(header)) // 2)
+        head_pad = " " * max(0, (width - _display_width(header)) // 2)
         out.append(("", head_pad))
         out.append(("class:primary", header + "\n\n"))
 
@@ -1976,20 +2048,22 @@ class ZoinKTUI:
         inner_w = box_w - 4
         title_w = max(18, inner_w - 16)
 
-        for idx, t in enumerate(album.tracks[:8]):
+        max_visible = max(5, height - 14)
+
+        for idx, t in enumerate(album.tracks[:max_visible]):
             is_cursor = idx == self.album_cursor
             is_checked = t.id in self.album_selected_ids
             check = "[✓] " if is_checked else "[ ] "
             cursor_m = "❯ " if is_cursor else "  "
 
-            title = (t.title[:title_w - 2] + "..") if len(t.title) > title_w else t.title
+            title = _truncate_to_width(t.title, title_w)
             row_str = f" {cursor_m}{check}{idx + 1:02d}. {title:<{title_w}} {t.duration_str:>6} "
 
             handler = self._click_handler(lambda i=idx: self._toggle_album_index(i))
             style = "class:choice.selected" if is_cursor else "class:choice.item"
 
             out.append(("class:border", f"{pad_x}│"))
-            out.append((style, row_str.ljust(inner_w)[:inner_w], handler))
+            out.append((style, _pad_to_width(_truncate_to_width(row_str, inner_w, ''), inner_w), handler))
             out.append(("class:border", "│\n"))
 
         sel_count = len(self.album_selected_ids)
@@ -2137,7 +2211,7 @@ class ZoinKTUI:
         total_tracks = len(self.library_tracks)
         pos_str = f"[{self.library_cursor + 1}/{total_tracks}]" if total_tracks else "[empty]"
         header = f"Music Library ({total_tracks} tracks) · {pos_str} · [sort: {self.library_sort_mode}]"
-        head_pad = " " * max(0, (width - len(header)) // 2)
+        head_pad = " " * max(0, (width - _display_width(header)) // 2)
         out.append(("", head_pad))
         out.append(("class:primary", header + "\n\n"))
 
@@ -2164,7 +2238,7 @@ class ZoinKTUI:
             out.append(("class:muted", f"{pad_x}│ {empty_msg:<{inner_w}} │\n"))
             out.append(("class:dim", f"{pad_x}│ {empty_hint:<{inner_w}} │\n"))
         else:
-            max_visible = max(5, min(12, height - 14)) if height > 16 else 8
+            max_visible = max(5, height - 14)
             # Scroll window
             if self.library_cursor < self.library_scroll_offset:
                 self.library_scroll_offset = self.library_cursor
@@ -2226,7 +2300,7 @@ class ZoinKTUI:
         inner_w = box_w - 4
 
         header = "Track Inspection"
-        head_pad = " " * max(0, (width - len(header)) // 2)
+        head_pad = " " * max(0, (width - _display_width(header)) // 2)
         out.append(("", head_pad))
         out.append(("class:primary", header + "\n\n"))
 
@@ -2307,7 +2381,7 @@ class ZoinKTUI:
         inner_w = box_w - 4
 
         header = "ZoinK Guide & Commands"
-        head_pad = " " * max(0, (width - len(header)) // 2)
+        head_pad = " " * max(0, (width - _display_width(header)) // 2)
         out.append(("", head_pad))
         out.append(("class:primary", header + "\n\n"))
 
@@ -2359,7 +2433,7 @@ class ZoinKTUI:
         inner_w = box_w - 4
 
         header = "ZoinK Settings & Preferences"
-        head_pad = " " * max(0, (width - len(header)) // 2)
+        head_pad = " " * max(0, (width - _display_width(header)) // 2)
         out.append(("", head_pad))
         out.append(("class:primary", header + "\n\n"))
 
@@ -2474,7 +2548,7 @@ class ZoinKTUI:
         inner_w = box_w - 4
 
         header = "Audio Format Converter"
-        head_pad = " " * max(0, (width - len(header)) // 2)
+        head_pad = " " * max(0, (width - _display_width(header)) // 2)
         out.append(("", head_pad))
         out.append(("class:primary", header + "\n\n"))
 

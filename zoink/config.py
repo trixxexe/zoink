@@ -170,7 +170,7 @@ class Config:
                 return p
             # Guard against temporary paths that were wiped or leaked from tests
             default_dir = _default_output_dir()
-            if "/tmp" in str(p) or "\\tmp" in str(p) or default_dir.exists():
+            if "/tmp" in str(p) or "\\tmp" in str(p):
                 return default_dir
             # Attempt creating the directory if it's a valid persistent path
             try:

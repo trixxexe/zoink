@@ -30,7 +30,7 @@ def get_style(mode: str = "auto") -> Style:
             "primary": "#111827 bold",
             "secondary": "#374151",
             "muted": "#6b7280",
-            "dim": "#9ca3af",
+            "dim": "#6b7280",
             "border": "#d1d5db",
             "border.focus": "#0284c7",
             "logo": "#0284c7 bold",

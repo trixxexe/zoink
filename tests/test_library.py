@@ -174,3 +174,81 @@ def test_library_reopen_persistence(tmp_path):
     lib2.scan_directory(prune=True)
     assert lib2.count() == 1
 
+
+def test_library_remove_track_by_path(tmp_path):
+    config = Config()
+    config["download_dir"] = str(tmp_path)
+    lib = Library(config)
+    f = tmp_path / "song.mp3"
+    f.write_bytes(b"audio")
+    lib.add_track(f, TrackResult(id="r1", title="Remove Me", source="youtube"))
+    assert lib.count() == 1
+    assert lib.remove_track_by_path(f) is True
+    assert lib.count() == 0
+
+
+def test_library_favorites(tmp_path):
+    config = Config()
+    config["download_dir"] = str(tmp_path)
+    lib = Library(config)
+    f = tmp_path / "fav.mp3"
+    f.write_bytes(b"audio")
+    lib.add_track(f, TrackResult(id="fav1", title="Favorite Track", source="youtube"))
+
+    assert lib.is_favorite("fav1") is False
+    assert lib.toggle_favorite("fav1") is True
+    assert lib.is_favorite("fav1") is True
+    favs = lib.get_favorites()
+    assert len(favs) == 1
+    assert favs[0]["id"] == "fav1"
+
+    # Toggle off
+    assert lib.toggle_favorite("fav1") is False
+    assert lib.is_favorite("fav1") is False
+    assert len(lib.get_favorites()) == 0
+
+
+def test_library_playlists_and_cascading_delete(tmp_path):
+    config = Config()
+    config["download_dir"] = str(tmp_path)
+    lib = Library(config)
+    f = tmp_path / "song.mp3"
+    f.write_bytes(b"audio")
+    lib.add_track(f, TrackResult(id="pl_t1", title="Track 1", source="youtube"))
+
+    pl = lib.create_playlist("Chill Vibes", "Relaxing tracks")
+    assert pl["name"] == "Chill Vibes"
+    pl_id = pl["id"]
+
+    added = lib.add_to_playlist(pl_id, ["pl_t1"])
+    assert added == 1
+
+    detail = lib.get_playlist(pl_id)
+    assert detail is not None
+    assert len(detail["tracks"]) == 1
+    assert detail["tracks"][0]["id"] == "pl_t1"
+
+    # Verify foreign key cascade delete when track is removed
+    lib.remove_track("pl_t1")
+    detail_after = lib.get_playlist(pl_id)
+    assert len(detail_after["tracks"]) == 0
+
+    # Delete playlist
+    assert lib.delete_playlist(pl_id) is True
+    assert lib.get_playlist(pl_id) is None
+
+
+def test_library_play_history(tmp_path):
+    config = Config()
+    config["download_dir"] = str(tmp_path)
+    lib = Library(config)
+    f = tmp_path / "hist.mp3"
+    f.write_bytes(b"audio")
+    lib.add_track(f, TrackResult(id="h1", title="History Track", source="youtube"))
+
+    lib.record_play("h1")
+    recent = lib.get_recently_played()
+    assert len(recent) == 1
+    assert recent[0]["id"] == "h1"
+    assert "last_played" in recent[0]
+

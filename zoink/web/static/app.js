@@ -82,8 +82,10 @@
     // State
     let queue = [];
     let queueIndex = -1;
-    let shuffle = false;
-    let repeat = false;
+    let savedShuffle = localStorage.getItem('zoink_shuffle') === 'true';
+    let savedRepeat = localStorage.getItem('zoink_repeat') === 'true';
+    let shuffle = savedShuffle;
+    let repeat = savedRepeat;
     let currentView = 'recent';
     let searchTimeout = null;
     let isSelectingMode = false;
@@ -91,6 +93,14 @@
     let currentTrack = null;
     let dlPollInterval = null;
     let currentLayout = localStorage.getItem('zoink_layout') || 'auto';
+
+    const _abortControllers = {};
+    function abortableFetch(key, url, opts = {}) {
+        if (_abortControllers[key]) _abortControllers[key].abort();
+        const ctrl = new AbortController();
+        _abortControllers[key] = ctrl;
+        return fetch(url, { ...opts, signal: ctrl.signal });
+    }
 
     // Apply layout
     setLayout(currentLayout);
@@ -200,21 +210,71 @@
     }
 
     // Keyboard Shortcuts
+    function closeAllModals() {
+        cmdPalette.classList.add('hidden');
+        downloadsModal.classList.add('hidden');
+        lyricsPanel.classList.add('hidden');
+        queuePanel.classList.add('hidden');
+        searchOverlay.classList.add('hidden');
+        const contextMenu = document.getElementById('context-menu');
+        if (contextMenu) contextMenu.classList.add('hidden');
+    }
+
+    function openShortcutsModal() {
+        openCommandPalette(); // Fallback for now since there's no dedicated modal in instructions
+    }
+
     document.addEventListener('keydown', (e) => {
-        if (document.activeElement === searchInput || document.activeElement === cmdInput) {
+        // Don't trigger if user is typing in an input
+        const tag = (e.target.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) {
+            if (e.key === 'Escape') e.target.blur();
             return;
         }
-        if (e.key === '/') {
-            e.preventDefault();
-            searchInput.focus();
-            searchInput.select();
-        } else if (e.code === 'Space') {
-            e.preventDefault();
-            togglePlay();
-        } else if (e.key === 'j' || e.key === 'J') {
-            prevTrack();
-        } else if (e.key === 'k' || e.key === 'K') {
-            nextTrack();
+        
+        switch (e.key) {
+            case ' ':
+                e.preventDefault();
+                togglePlay();
+                break;
+            case 'ArrowRight':
+                if (e.shiftKey) { nextTrack(); }
+                else if (audio && audio.duration) { audio.currentTime = Math.min(audio.duration, audio.currentTime + 5); }
+                break;
+            case 'ArrowLeft':
+                if (e.shiftKey) { prevTrack(); }
+                else if (audio) { audio.currentTime = Math.max(0, audio.currentTime - 5); }
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                if (audio) { audio.volume = Math.min(1, audio.volume + 0.05); updateVolumeUI(); localStorage.setItem('zoink_volume', audio.volume); }
+                break;
+            case 'ArrowDown':
+                e.preventDefault();
+                if (audio) { audio.volume = Math.max(0, audio.volume - 0.05); updateVolumeUI(); localStorage.setItem('zoink_volume', audio.volume); }
+                break;
+            case 'm': case 'M':
+                toggleMute();
+                break;
+            case 's': case 'S':
+                toggleShuffle();
+                break;
+            case 'r': case 'R':
+                toggleRepeat();
+                break;
+            case 'l': case 'L':
+                openLyricsModal();
+                break;
+            case '/':
+                e.preventDefault();
+                if (searchInput) searchInput.focus();
+                break;
+            case '?':
+                openShortcutsModal();
+                break;
+            case 'Escape':
+                closeAllModals();
+                break;
         }
     });
 
@@ -312,6 +372,12 @@
         audio.play().then(() => {
             btnPlay.innerHTML = '⏸';
             updateMediaSession(track);
+            // Record play history
+            fetch('/api/history/play', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ track_id: track.id })
+            }).catch(() => {});
         }).catch(err => {
             console.error('Audio play error:', err);
         });
@@ -372,12 +438,14 @@
 
     function toggleShuffle() {
         shuffle = !shuffle;
+        localStorage.setItem('zoink_shuffle', shuffle);
         btnShuffle.classList.toggle('active', shuffle);
         showToast(shuffle ? 'Shuffle enabled' : 'Shuffle disabled');
     }
 
     function toggleRepeat() {
         repeat = !repeat;
+        localStorage.setItem('zoink_repeat', repeat);
         btnRepeat.classList.toggle('active', repeat);
         showToast(repeat ? 'Repeat track enabled' : 'Repeat disabled');
     }
@@ -396,11 +464,17 @@
     btnMute.addEventListener('click', toggleMute);
 
     // Seekbar Updates
+    function updateScrubberFill(bar, value) {
+        const pct = value + '%';
+        bar.style.background = `linear-gradient(to right, var(--accent) ${pct}, rgba(255,255,255,0.15) ${pct})`;
+    }
+
     seekBar.addEventListener('input', () => {
         if (audio.duration) {
             const seekTo = (seekBar.value / 100) * audio.duration;
             audio.currentTime = seekTo;
             seekProgressFill.style.width = seekBar.value + '%';
+            updateScrubberFill(seekBar, seekBar.value);
         }
     });
 
@@ -409,6 +483,7 @@
             const pct = (audio.currentTime / audio.duration) * 100;
             seekBar.value = pct;
             seekProgressFill.style.width = pct + '%';
+            updateScrubberFill(seekBar, pct);
             currentTimeEl.textContent = formatTime(audio.currentTime);
             durationEl.textContent = formatTime(audio.duration);
         }
@@ -426,11 +501,25 @@
     // Volume Slider
     volumeBar.addEventListener('input', () => {
         audio.volume = volumeBar.value / 100;
+        localStorage.setItem('zoink_volume', audio.volume);
         volProgressFill.style.width = volumeBar.value + '%';
         if (audio.muted) toggleMute();
     });
-    volProgressFill.style.width = volumeBar.value + '%';
-    audio.volume = 0.85;
+    
+    function updateVolumeUI() {
+        if (audio) {
+            volumeBar.value = audio.volume * 100;
+            volProgressFill.style.width = volumeBar.value + '%';
+        }
+    }
+
+    let savedVolume = localStorage.getItem('zoink_volume');
+    if (savedVolume !== null) {
+        audio.volume = parseFloat(savedVolume);
+    } else {
+        audio.volume = 0.85;
+    }
+    updateVolumeUI();
 
     // MediaSession API Integration
     function updateMediaSession(t) {
@@ -557,7 +646,7 @@
         searchOnlineList.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
 
         try {
-            const res = await fetch('/api/search?q=' + encodeURIComponent(query) + '&limit=15');
+            const res = await abortableFetch('search', '/api/search?q=' + encodeURIComponent(query) + '&limit=15');
             const results = await res.json();
             searchOnlineList.innerHTML = '';
 
@@ -591,6 +680,7 @@
                 searchOnlineList.appendChild(row);
             });
         } catch (err) {
+            if (err.name === 'AbortError') return;
             searchOnlineList.innerHTML = '<div class="empty-state" style="padding:32px;color:var(--danger)">Search failed. Please check network.</div>';
         }
     }
@@ -1062,6 +1152,11 @@
             }
         });
 
+        row.addEventListener('contextmenu', (e) => {
+            if (isSelectingMode) return;
+            showContextMenu(e, t);
+        });
+
         row.querySelector('.row-play').addEventListener('click', (e) => {
             e.stopPropagation();
             playTrack(t);
@@ -1076,19 +1171,18 @@
     }
 
     // -- Toast Notifications --
-    function showToast(msg, type = 'info') {
+    function showToast(message, type = 'info', duration = 3000) {
+        const container = toastContainer || document.getElementById('toastContainer');
+        if (!container) return;
         const toast = document.createElement('div');
-        toast.className = 'toast';
-        if (type === 'error') toast.style.borderColor = 'var(--danger)';
-        if (type === 'success') toast.style.borderColor = 'var(--success)';
-        toast.textContent = msg;
-        toastContainer.appendChild(toast);
+        toast.className = `toast-item toast-${type}`;
+        toast.innerHTML = `<span>${esc(message)}</span>`;
+        container.appendChild(toast);
+        requestAnimationFrame(() => toast.classList.add('toast-visible'));
         setTimeout(() => {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateY(10px)';
-            toast.style.transition = 'all 0.3s ease';
-            setTimeout(() => toast.remove(), 300);
-        }, 2800);
+            toast.classList.remove('toast-visible');
+            toast.addEventListener('transitionend', () => toast.remove());
+        }, duration);
     }
 
     function formatTime(secs) {
@@ -1107,8 +1201,254 @@
             .replace(/"/g, '&quot;');
     }
 
+    // -- Context Menu System --
+    let _ctxMenuTrack = null;
+    function showContextMenu(e, track) {
+        e.preventDefault();
+        _ctxMenuTrack = track;
+        const menu = document.getElementById('context-menu');
+        if (!menu) return;
+        menu.style.left = Math.min(e.clientX, window.innerWidth - 220) + 'px';
+        menu.style.top = Math.min(e.clientY, window.innerHeight - 320) + 'px';
+        menu.classList.remove('hidden');
+        // Update favorite button text
+        const favBtn = menu.querySelector('[data-action="toggle-fav"]');
+        if (favBtn) {
+            fetch('/api/favorites/' + encodeURIComponent(track.id) + '/status')
+                .then(r => r.json())
+                .then(d => { favBtn.textContent = d.favorited ? '♥ Unfavorite' : '♡ Add to Favorites'; })
+                .catch(() => {});
+        }
+    }
+
+    function handleContextAction(action) {
+        const menu = document.getElementById('context-menu');
+        if (menu) menu.classList.add('hidden');
+        if (!_ctxMenuTrack) return;
+        const track = _ctxMenuTrack;
+        switch (action) {
+            case 'play-next':
+                queue.splice(queueIndex + 1, 0, track);
+                showToast('Playing next: ' + (track.title || 'Unknown'), 'success');
+                break;
+            case 'add-queue':
+                queue.push(track);
+                showToast('Added to queue', 'success');
+                break;
+            case 'add-playlist':
+                addToPlaylistPrompt([track.id]);
+                break;
+            case 'toggle-fav':
+                fetch('/api/favorites/' + encodeURIComponent(track.id), { method: 'POST' })
+                    .then(r => r.json())
+                    .then(d => showToast(d.favorited ? 'Added to favorites ♥' : 'Removed from favorites', d.favorited ? 'success' : 'info'))
+                    .catch(() => showToast('Failed to update favorite', 'error'));
+                break;
+            case 'go-artist':
+                if (track.artist) loadArtistDetail(track.artist);
+                break;
+            case 'go-album':
+                if (track.album) loadAlbumDetail(track.album);
+                break;
+            case 'download':
+                window.open('/api/file/' + encodeURIComponent(track.id), '_blank');
+                break;
+        }
+    }
+
+    // Close context menu on click elsewhere
+    document.addEventListener('click', () => {
+        const menu = document.getElementById('context-menu');
+        if (menu) menu.classList.add('hidden');
+    });
+
+    window.handleContextAction = handleContextAction; // Export for inline event handlers if needed
+
+    // -- Favorites Toggle (Currently Playing) --
+    function toggleFavoriteCurrent() {
+        if (!currentTrack || !currentTrack.id) return;
+        fetch('/api/favorites/' + encodeURIComponent(currentTrack.id), { method: 'POST' })
+            .then(r => r.json())
+            .then(d => {
+                showToast(d.favorited ? 'Added to favorites ♥' : 'Removed from favorites', d.favorited ? 'success' : 'info');
+                updateFavoriteUI(d.favorited);
+            })
+            .catch(() => showToast('Failed to update favorite', 'error'));
+    }
+
+    function updateFavoriteUI(isFav) {
+        document.querySelectorAll('[data-favorite-btn]').forEach(btn => {
+            if (isFav) {
+                btn.classList.add('text-red-400');
+                btn.classList.remove('text-[var(--text-muted)]');
+            } else {
+                btn.classList.remove('text-red-400');
+                btn.classList.add('text-[var(--text-muted)]');
+            }
+        });
+    }
+
+    window.toggleFavoriteCurrent = toggleFavoriteCurrent;
+
+    // -- SSE Client for Real-time Download Progress --
+    let _eventSource = null;
+    function connectSSE() {
+        if (_eventSource) return;
+        try {
+            _eventSource = new EventSource('/api/events');
+            _eventSource.addEventListener('download_progress', (e) => {
+                try {
+                    const data = JSON.parse(e.data);
+                    // Update download UI if modal is open
+                    if (downloadsModal && !downloadsModal.classList.contains('hidden')) {
+                        pollDownloadQueue();
+                    }
+                } catch (_) {}
+            });
+            _eventSource.addEventListener('download_complete', (e) => {
+                try {
+                    const data = JSON.parse(e.data);
+                    showToast('Downloaded: ' + (data.title || 'track'), 'success');
+                    switchView(currentView); // Refresh current view
+                } catch (_) {}
+            });
+            _eventSource.onerror = () => {
+                if (_eventSource) _eventSource.close();
+                _eventSource = null;
+                setTimeout(connectSSE, 5000);
+            };
+        } catch (_) {
+            // SSE not supported, fall back to polling
+        }
+    }
+
+    // -- Playlist Management --
+    function loadPlaylists() {
+        fetch('/api/playlists').then(r => r.json()).then(playlists => {
+            const container = document.getElementById('playlists-list');
+            if (!container) return;
+            if (!playlists.length) {
+                container.innerHTML = '<p class="text-xs text-[var(--text-muted)] px-3 py-2 italic">No playlists yet</p>';
+                return;
+            }
+            container.innerHTML = playlists.map(pl => `
+                <button onclick="loadPlaylistDetail('${esc(pl.id)}')" class="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition text-left">
+                    <span class="w-6 h-6 rounded bg-purple-500/20 text-purple-400 flex items-center justify-center text-xs">♫</span>
+                    <span class="truncate flex-1">${esc(pl.name)}</span>
+                    <span class="text-[10px] text-[var(--text-muted)]">${pl.track_count || 0}</span>
+                </button>
+            `).join('');
+        }).catch(() => {});
+    }
+
+    function createPlaylistPrompt() {
+        const name = prompt('Playlist name:');
+        if (!name || !name.trim()) return;
+        fetch('/api/playlists', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name.trim() })
+        })
+        .then(r => r.json())
+        .then(() => { showToast('Playlist created!', 'success'); loadPlaylists(); })
+        .catch(() => showToast('Failed to create playlist', 'error'));
+    }
+
+    function loadPlaylistDetail(playlistId) {
+        fetch('/api/playlists/' + encodeURIComponent(playlistId))
+            .then(r => r.json())
+            .then(pl => {
+                if (pl.tracks && pl.tracks.length) {
+                    // Load tracks into queue and play
+                    queue = pl.tracks.slice();
+                    queueIndex = 0;
+                    playTrack(queue[0]);
+                    showToast('Playing: ' + pl.name, 'success');
+                } else {
+                    showToast('Playlist is empty', 'info');
+                }
+            })
+            .catch(() => showToast('Failed to load playlist', 'error'));
+    }
+
+    function addToPlaylistPrompt(trackIds) {
+        fetch('/api/playlists').then(r => r.json()).then(playlists => {
+            if (!playlists.length) {
+                const name = prompt('No playlists yet. Create one:');
+                if (!name) return;
+                fetch('/api/playlists', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name.trim() })
+                }).then(r => r.json()).then(pl => {
+                    return fetch('/api/playlists/' + pl.id + '/tracks', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ track_ids: trackIds })
+                    });
+                }).then(() => { showToast('Added to new playlist!', 'success'); loadPlaylists(); })
+                .catch(() => showToast('Failed', 'error'));
+                return;
+            }
+            const choices = playlists.map((pl, i) => `${i + 1}. ${pl.name}`).join('\n');
+            const pick = prompt('Add to which playlist?\n' + choices);
+            if (!pick) return;
+            const idx = parseInt(pick) - 1;
+            if (idx < 0 || idx >= playlists.length) return;
+            fetch('/api/playlists/' + playlists[idx].id + '/tracks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ track_ids: trackIds })
+            }).then(() => { showToast('Added to ' + playlists[idx].name, 'success'); loadPlaylists(); })
+            .catch(() => showToast('Failed to add to playlist', 'error'));
+        }).catch(() => showToast('Could not load playlists', 'error'));
+    }
+
+    // -- Recently Played --
+    function loadRecentlyPlayed() {
+        fetch('/api/history/recent?limit=10').then(r => r.json()).then(tracks => {
+            const section = document.getElementById('recently-played-section');
+            const list = document.getElementById('recently-played-list');
+            if (!section || !list) return;
+            if (!tracks.length) { section.classList.add('hidden'); return; }
+            section.classList.remove('hidden');
+            list.innerHTML = '';
+            tracks.forEach(t => list.appendChild(createTrackRow(t)));
+        }).catch(() => {});
+    }
+
+    // -- Shortcuts Modal --
+    function openShortcutsModal() {
+        const modal = document.getElementById('shortcuts-modal');
+        if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeAllModals() {
+        ['shortcuts-modal', 'settings-modal', 'context-menu'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
+        // Close other modals/panels
+        if (downloadsModal) downloadsModal.classList.add('hidden');
+        if (lyricsPanel) lyricsPanel.classList.add('hidden');
+        if (queuePanel) queuePanel.classList.add('hidden');
+        if (searchOverlay) searchOverlay.classList.add('hidden');
+        if (cmdPalette) cmdPalette.classList.add('hidden');
+    }
+
+    // Export functions for inline HTML event handlers
+    window.createPlaylistPrompt = createPlaylistPrompt;
+    window.loadPlaylistDetail = loadPlaylistDetail;
+    window.addToPlaylistPrompt = addToPlaylistPrompt;
+    window.openShortcutsModal = openShortcutsModal;
+
     // Initial load
+    if (shuffle) btnShuffle.classList.add('active');
+    if (repeat) btnRepeat.classList.add('active');
     switchView('recent');
     startDownloadPolling();
+    connectSSE();
+    loadPlaylists();
+    loadRecentlyPlayed();
 })();
 

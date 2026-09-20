@@ -254,9 +254,7 @@ def convert_library_track(
 
     if replace_original and str(final_path) != old_filepath_str:
         # Delete old record from library if filename changed
-        with library._conn() as conn:
-            conn.execute("DELETE FROM tracks WHERE filepath = ?", (old_filepath_str,))
-            conn.commit()
+        library.remove_track_by_path(old_filepath_str)
 
     library.add_track(final_path, new_meta)
     return True, final_path, None
