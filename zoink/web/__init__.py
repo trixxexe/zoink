@@ -8,6 +8,7 @@ import time
 import queue as stdlib_queue
 import mimetypes
 import os
+import platform
 import shutil
 import socket
 import subprocess
@@ -510,15 +511,25 @@ def api_stream(target):
 
     # Universal browser compatibility: transcode to MP3 on-the-fly if requested
     req_transcode = request.args.get("transcode", "").lower() or request.args.get("format", "").lower()
-    if req_transcode == "mp3" and fp.suffix.lower() != ".mp3" and shutil.which("ffmpeg"):
+    ff_bin = None
+    try:
+        from zoink.converter import get_ffmpeg_path
+        ff_bin = get_ffmpeg_path()
+    except Exception:
+        ff_bin = shutil.which("ffmpeg")
+
+    if req_transcode == "mp3" and fp.suffix.lower() != ".mp3" and ff_bin:
         cmd = [
-            "ffmpeg", "-i", str(fp), "-vn",
+            ff_bin, "-i", str(fp), "-vn",
             "-c:a", "libmp3lame", "-b:a", "192k",
             "-f", "mp3", "pipe:1",
         ]
 
         def generate_mp3():
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            kwargs = {}
+            if platform.system() == "Windows":
+                kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, **kwargs)
             try:
                 while True:
                     chunk = proc.stdout.read(_CHUNK)
@@ -528,6 +539,7 @@ def api_stream(target):
             finally:
                 try:
                     proc.kill()
+                    proc.wait(timeout=1)
                 except Exception:
                     pass
 

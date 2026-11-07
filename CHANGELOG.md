@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-11-07
+
+### Added
+- **Full Cross-Platform Support**: Native Windows, macOS (Darwin), Linux, and Android (Termux) compatibility verified.
+- **Direct CLI Query Launch**: Users can directly launch with search query or media URL (`zoink "Song Title"` or `zoink "<URL>"`) as promised in README.
+- **macOS Native Playback**: Added `afplay` support for out-of-the-box local terminal playback on macOS.
+- **Windows Console UTF-8 & VT100**: Auto-reconfigure standard stdout/stderr streams to UTF-8 and initialize Colorama for proper color/cursor sequences in Windows Command Prompt and PowerShell.
+- **Dynamic FFmpeg Discovery**: Added `get_ffmpeg_path()` discovering binaries across PATH, `imageio-ffmpeg`, environment variables (`ZOINK_FFMPEG_PATH`, `FFMPEG_PATH`), WinGet, Program Files, Homebrew, and Termux paths. Added `ffmpeg_location` to yt-dlp options.
+- **Optional FFmpeg Dependency**: Added `[project.optional-dependencies]` `ffmpeg = ["imageio-ffmpeg>=0.4.0"]` in `pyproject.toml`.
+- **Environment Isolation**: Added `ZOINK_DOWNLOAD_DIR` environment variable support.
+
+### Fixed
+- **PermissionError on Restricted Filesystems**: Replaced rigid default paths with resilient multi-tier candidate discovery in `_default_output_dir()`, gracefully testing writability before returning.
+- **SQLite WAL Failures**: Added fallback to `DELETE` journal mode when WAL mode is unsupported by underlying filesystems (FAT32, exFAT, NFS, SD cards). Added database path fallback to config directory if download dir is read-only.
+- **Windows Reserved Names**: Prevented filesystem collisions in `_sanitize()` for reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`).
+- **Windows Node Discovery**: Resolved `node.exe` through `shutil.which("node")` instead of checking POSIX extensionless `node`.
+- **Test Suite Path Isolation**: Completely isolated both config and download directories in `conftest.py` so unit tests never touch host user folders. Fixed POSIX path separator assertion in `test_downloader.py`.
+
 ## [0.4.0] - 2026-09-20
 
 ### Added

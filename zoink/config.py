@@ -3,6 +3,7 @@
 import json
 import os
 import platform
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -16,45 +17,80 @@ def _is_termux() -> bool:
 
 
 def _default_output_dir() -> Path:
-    home = Path.home()
-    if _is_termux():
-        candidate = home / "storage" / "shared" / "Music"
-        if candidate.exists():
-            return candidate
-        shared = home / "storage" / "shared"
-        if shared.exists():
-            return shared / "Music" if (shared / "Music").exists() else shared
-        return home / "Music"
-    if platform.system() == "Windows":
-        return home / "Downloads" / "Music"
-    if platform.system() == "Darwin":
-        return home / "Downloads" / "Music"
-
-    # Standard Linux / POSIX: check XDG Music Directory first
-    xdg_music = os.environ.get("XDG_MUSIC_DIR", "").strip()
-    if xdg_music:
-        p = Path(xdg_music).expanduser()
-        if p.exists():
+    env = os.environ.get("ZOINK_DOWNLOAD_DIR", "").strip()
+    if env:
+        p = Path(env).expanduser().resolve()
+        try:
+            p.mkdir(parents=True, exist_ok=True)
             return p
+        except OSError:
+            pass
 
-    # Standard ~/Music folder (e.g. /root/Music or /home/<user>/Music)
-    music_dir = home / "Music"
-    if music_dir.exists():
-        return music_dir
+    home = Path.home()
+    candidates: list[Path] = []
 
-    xdg = os.environ.get("XDG_DOWNLOAD_DIR", "").strip()
-    if xdg:
-        p = Path(xdg).expanduser()
-        if p.exists():
-            return p / "Music"
-    return home / "Music"
+    if _is_termux():
+        candidates.extend([
+            home / "storage" / "shared" / "Music",
+            home / "storage" / "shared",
+            home / "Music",
+        ])
+    elif platform.system() == "Windows":
+        candidates.extend([
+            home / "Music",
+            home / "Downloads" / "Music",
+        ])
+    elif platform.system() == "Darwin":
+        candidates.extend([
+            home / "Music",
+            home / "Downloads" / "Music",
+        ])
+    else:
+        # Standard Linux / POSIX: check XDG Music Directory first
+        xdg_music = os.environ.get("XDG_MUSIC_DIR", "").strip()
+        if xdg_music:
+            candidates.append(Path(xdg_music).expanduser())
+        candidates.append(home / "Music")
+        xdg_dl = os.environ.get("XDG_DOWNLOAD_DIR", "").strip()
+        if xdg_dl:
+            candidates.append(Path(xdg_dl).expanduser() / "Music")
+
+    # Add safe writable fallbacks
+    try:
+        candidates.append(get_config_dir() / "music")
+    except Exception:
+        pass
+    candidates.append(Path(tempfile.gettempdir()) / "zoink_music")
+
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            if candidate.is_dir() and os.access(str(candidate), os.W_OK):
+                return candidate.resolve()
+        except (OSError, PermissionError):
+            continue
+
+    # Ultimate fallback: temporary folder
+    tmp = Path(tempfile.gettempdir()) / "zoink"
+    try:
+        tmp.mkdir(parents=True, exist_ok=True)
+        return tmp.resolve()
+    except Exception:
+        return Path.cwd().resolve()
 
 
 def _default_config_dir() -> Path:
     env = os.environ.get("ZOINK_CONFIG_DIR")
     if env:
         return Path(env).expanduser().resolve()
-    return (Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / APP_NAME).resolve()
+    xdg = os.environ.get("XDG_CONFIG_HOME", "").strip()
+    if xdg:
+        return (Path(xdg).expanduser() / APP_NAME).resolve()
+    if platform.system() == "Windows":
+        appdata = os.environ.get("APPDATA", "").strip()
+        if appdata and not (Path.home() / ".config" / APP_NAME).exists():
+            return (Path(appdata) / APP_NAME).resolve()
+    return (Path.home() / ".config" / APP_NAME).resolve()
 
 
 CONFIG_DIR = _default_config_dir()
@@ -168,16 +204,12 @@ class Config:
             p = Path(d).expanduser().resolve()
             if p.exists():
                 return p
-            # Guard against temporary paths that were wiped or leaked from tests
-            default_dir = _default_output_dir()
-            if "/tmp" in str(p) or "\\tmp" in str(p):
-                return default_dir
-            # Attempt creating the directory if it's a valid persistent path
+            # Attempt creating the directory if it's a valid path
             try:
                 p.mkdir(parents=True, exist_ok=True)
                 return p
             except OSError:
-                return default_dir
+                return _default_output_dir()
         return _default_output_dir()
 
     @property

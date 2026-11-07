@@ -138,9 +138,17 @@ def _normalize_image(data: bytes) -> bytes:
 
 def _convert_webp_to_jpeg(webp_data: bytes) -> Optional[bytes]:
     """Convert WebP bytes to JPEG bytes using ffmpeg in-memory or fallback."""
+    ff_bin = None
+    try:
+        from zoink.converter import get_ffmpeg_path
+        ff_bin = get_ffmpeg_path()
+    except Exception:
+        pass
+    ff = ff_bin or "ffmpeg"
+
     # Fast path: in-memory streaming via stdin/stdout pipe
     try:
-        cmd = ["ffmpeg", "-y", "-i", "pipe:0", "-f", "image2", "-c:v", "mjpeg", "-q:v", "2", "pipe:1"]
+        cmd = [ff, "-y", "-i", "pipe:0", "-f", "image2", "-c:v", "mjpeg", "-q:v", "2", "pipe:1"]
         proc = subprocess.run(cmd, input=webp_data, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5)
         if proc.returncode == 0 and proc.stdout and proc.stdout[:3] == b"\xff\xd8\xff":
             return proc.stdout
@@ -154,7 +162,7 @@ def _convert_webp_to_jpeg(webp_data: bytes) -> Optional[bytes]:
             in_path = Path(in_f.name)
         out_path = in_path.with_suffix(".jpg")
         try:
-            cmd = ["ffmpeg", "-y", "-i", str(in_path), "-q:v", "2", str(out_path)]
+            cmd = [ff, "-y", "-i", str(in_path), "-q:v", "2", str(out_path)]
             proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=6)
             if proc.returncode == 0 and out_path.exists():
                 return out_path.read_bytes()

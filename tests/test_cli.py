@@ -84,3 +84,19 @@ def test_cli_convert_search_query(tmp_path, capsys):
         assert mock_conv.called
         out = capsys.readouterr().out
         assert "Successfully converted" in out
+
+
+def test_cli_direct_query_launch():
+    from unittest.mock import patch
+    with patch("zoink.tui.run_tui") as mock_run_tui:
+        code = main(["Daft Punk Get Lucky", "--no-clear"])
+        assert code == 0
+        mock_run_tui.assert_called_once_with(no_clear=True, initial_query="Daft Punk Get Lucky")
+
+
+def test_cli_tui_subcommand_with_query():
+    from unittest.mock import patch
+    with patch("zoink.tui.run_tui") as mock_run_tui:
+        code = main(["tui", "https://www.youtube.com/watch?v=123"])
+        assert code == 0
+        mock_run_tui.assert_called_once_with(no_clear=False, initial_query="https://www.youtube.com/watch?v=123")

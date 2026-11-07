@@ -11,6 +11,7 @@ from zoink.converter import (
     convert_audio_file,
     convert_library_track,
     is_ffmpeg_available,
+    get_ffmpeg_path,
     run_ffmpeg_transcode,
 )
 from zoink.library import Library
@@ -21,9 +22,11 @@ from zoink.web import create_app
 
 @pytest.fixture(scope="module")
 def sample_sine_mp3(tmp_path_factory):
+    if not is_ffmpeg_available():
+        pytest.skip("FFmpeg is not available on this system")
     fn = tmp_path_factory.mktemp("audio_convert") / "test_sine.mp3"
     cmd = [
-        "ffmpeg",
+        get_ffmpeg_path() or "ffmpeg",
         "-y",
         "-f",
         "lavfi",
@@ -60,6 +63,9 @@ def test_converter_supported_formats():
 
 def test_ffmpeg_available():
     assert is_ffmpeg_available() is True
+    path = get_ffmpeg_path()
+    assert path is not None
+    assert "ffmpeg" in path.lower()
 
 
 def test_transcode_direct(tmp_path, sample_sine_mp3):

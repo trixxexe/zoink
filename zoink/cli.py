@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
 import sys
 from pathlib import Path
 from typing import Optional
@@ -27,6 +28,39 @@ def _print_header(subtitle: str = "") -> None:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    # Ensure stdout/stderr handle UTF-8 cleanly without charmap crashes on Windows
+    if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+        try:
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    if platform.system() == "Windows":
+        try:
+            import colorama
+            colorama.just_fix_windows_console()
+        except Exception:
+            pass
+
+    raw_args = sys.argv[1:] if argv is None else list(argv)
+    known_commands = {"tui", "search", "download", "album", "serve", "web", "scan", "convert", "config"}
+
+    # Handle direct launch with search query or URL: e.g. zoink "Daft Punk Get Lucky"
+    no_clear = "--no-clear" in raw_args
+    filtered = [a for a in raw_args if a != "--no-clear"]
+    if filtered and not filtered[0].startswith("-") and filtered[0] not in known_commands:
+        direct_query = " ".join(filtered)
+        from zoink.tui import run_tui
+        try:
+            run_tui(no_clear=no_clear, initial_query=direct_query)
+        except (KeyboardInterrupt, SystemExit):
+            pass
+        return 0
+
     parser = argparse.ArgumentParser(
         prog="zoink",
         description=f"ZoinK v{__version__} — TUI Song Downloader + Web Music Player {WATERMARK}",
@@ -45,7 +79,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     sub = parser.add_subparsers(dest="command")
 
     # tui subcommand (optional explicit alias)
-    sub.add_parser("tui", help="Launch interactive Terminal UI (default)")
+    tui_p = sub.add_parser("tui", help="Launch interactive Terminal UI (default)")
+    tui_p.add_argument("query", nargs="*", default=[], help="Optional initial search query or URL")
 
     # search subcommand
     search_p = sub.add_parser("search", help="Search for music tracks")
@@ -116,10 +151,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     elif args.command == "config":
         return _cmd_config(args)
     else:
-        # Default: launch TUI
+        # Default or tui: launch TUI
         from zoink.tui import run_tui
+        initial_q = " ".join(getattr(args, "query", [])) if getattr(args, "query", None) else ""
         try:
-            run_tui(no_clear=args.no_clear)
+            run_tui(no_clear=args.no_clear, initial_query=initial_q)
         except (KeyboardInterrupt, SystemExit):
             pass
         return 0

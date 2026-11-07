@@ -24,7 +24,7 @@ from zoink.tui.app import TUIPhase, ZoinKTUI, is_probably_url
 from zoink.tui.theme import get_style
 
 
-def run_tui(no_clear: bool = False, non_interactive: bool = False) -> None:
+def run_tui(no_clear: bool = False, non_interactive: bool = False, initial_query: str = "") -> None:
     """Launch the interactive ZoinK TUI application."""
     config = Config.get()
     provider = YouTubeProvider()
@@ -105,6 +105,7 @@ def run_tui(no_clear: bool = False, non_interactive: bool = False) -> None:
         on_refresh=on_refresh,
         on_theme_change=on_theme_change,
         on_request_exit=lambda: safe_exit(0),
+        initial_query=initial_query,
     )
 
     kb = KeyBindings()

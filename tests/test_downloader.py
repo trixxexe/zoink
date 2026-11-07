@@ -13,6 +13,10 @@ def test_sanitize():
     assert _sanitize('Bad/Name"') == "Bad_Name"
     assert _sanitize("") == "Unknown"
     assert _sanitize("a" * 250)[:200] == "a" * 200
+    assert _sanitize("CON") == "_CON"
+    assert _sanitize("aux") == "_aux"
+    assert _sanitize("nul") == "_nul"
+    assert _sanitize("COM1.mp3") == "_COM1.mp3"
 
 
 def test_build_path_basic():
@@ -33,7 +37,7 @@ def test_build_path_basic():
     assert "Artist" in path
     assert "Album" in path
     assert "01 - My Song.mp3" in path
-    assert path.startswith("/music/")
+    assert Path(path).as_posix().startswith("/music/")
 
 
 def test_build_path_defaults():

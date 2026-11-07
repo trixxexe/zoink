@@ -22,19 +22,40 @@ class Library:
 
     def __init__(self, config: Config):
         self.config = config
-        self._db_path = config.download_dir / ".zoink_library.db"
+        db_dir = config.download_dir
+        try:
+            db_dir.mkdir(parents=True, exist_ok=True)
+            self._db_path = db_dir / ".zoink_library.db"
+        except (OSError, PermissionError):
+            from zoink.config import get_config_dir
+            fallback_dir = get_config_dir()
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+            self._db_path = fallback_dir / "library.db"
         self._init_db()
         self._check_and_migrate_legacy_db()
 
     def _conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self._db_path), timeout=10)
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA synchronous=NORMAL;")
-        conn.execute("PRAGMA foreign_keys=ON;")
+        conn = sqlite3.connect(str(self._db_path), timeout=15)
+        try:
+            conn.execute("PRAGMA journal_mode=WAL;")
+        except sqlite3.OperationalError:
+            try:
+                conn.execute("PRAGMA journal_mode=DELETE;")
+            except Exception:
+                pass
+        try:
+            conn.execute("PRAGMA synchronous=NORMAL;")
+            conn.execute("PRAGMA busy_timeout=5000;")
+            conn.execute("PRAGMA foreign_keys=ON;")
+        except Exception:
+            pass
         return conn
 
     def _init_db(self) -> None:
-        self.config.download_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        except (OSError, PermissionError):
+            pass
         with _DB_LOCK:
             conn = self._conn()
             try:

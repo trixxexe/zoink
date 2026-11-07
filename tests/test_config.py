@@ -56,3 +56,11 @@ def test_properties():
     assert isinstance(config.server_lan, bool)
     assert isinstance(config.output_format, str)
     assert isinstance(config.quality, str)
+
+
+def test_download_dir_env_var(tmp_path, monkeypatch):
+    custom_dir = tmp_path / "custom_music"
+    custom_dir.mkdir()
+    monkeypatch.setenv("ZOINK_DOWNLOAD_DIR", str(custom_dir))
+    config = Config()
+    assert config.download_dir == custom_dir

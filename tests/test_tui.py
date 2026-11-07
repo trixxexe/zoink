@@ -785,6 +785,42 @@ def test_library_playback_and_stop(tui_instance, tmp_path, monkeypatch):
     assert tui.playback_status_text == ""
 
 
+def test_tui_initial_query():
+    tui = ZoinKTUI(initial_query="test query")
+    assert tui.input_text == "test query"
+
+
+def test_tui_macos_afplay_playback(tui_instance, tmp_path, monkeypatch):
+    import subprocess
+    tui = tui_instance
+    lib = tui.library
+    audio_file = tmp_path / "song.m4a"
+    audio_file.write_bytes(b"data")
+    t = TrackResult(id="m1", title="Mac Song", artist="Mac Artist", duration=150)
+    lib.add_track(audio_file, t)
+    tui.open_library()
+
+    executed_cmd = []
+    class DummyPopen:
+        def __init__(self, cmd, *args, **kwargs):
+            executed_cmd.extend(cmd)
+        def terminate(self):
+            pass
+        def wait(self, timeout=None):
+            pass
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(subprocess, "Popen", DummyPopen)
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/afplay" if name == "afplay" else None)
+    tui._cached_player_name = None
+
+    tui.handle_play()
+    assert tui.playback_process is not None
+    assert executed_cmd[0] == "afplay"
+    tui.stop_audio()
+
+
 def test_library_delete_confirmation_flow(tui_instance, tmp_path):
     tui = tui_instance
     lib = tui.library

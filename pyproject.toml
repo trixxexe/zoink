@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zoink"
-version = "0.4.0"
-description = "ZoinK — Fast Termux & Linux Music Downloader + Modern AMOLED Web Player"
+version = "0.4.1"
+description = "ZoinK — Fast Cross-Platform (Termux, Linux, macOS, Windows) Music Downloader + Modern AMOLED Web Player"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -16,7 +16,10 @@ keywords = ["music", "downloader", "tui", "web-player", "termux", "audio", "spot
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
     "Environment :: Console",
     "Topic :: Multimedia :: Sound/Audio",
 ]
@@ -28,6 +31,10 @@ dependencies = [
     "rich>=13.0",
     "prompt_toolkit>=3.0",
 ]
+
+[project.optional-dependencies]
+ffmpeg = ["imageio-ffmpeg>=0.4.0"]
+dev = ["pytest>=7.0"]
 
 [project.scripts]
 zoink = "zoink.cli:main"

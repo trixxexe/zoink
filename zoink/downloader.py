@@ -600,6 +600,13 @@ def _build_path(template: str, track: TrackResult, ext: str, base: Path) -> str:
     return str(base / result)
 
 
+_WIN_RESERVED = {
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+}
+
+
 def _sanitize(name: str) -> str:
     """Sanitize a string for use in filenames."""
     import re
@@ -607,7 +614,10 @@ def _sanitize(name: str) -> str:
     name = unicodedata.normalize("NFKD", name)
     name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name)
     name = re.sub(r"\s+", " ", name).strip(" ._")
-    return name[:200] if name else "Unknown"
+    cleaned = name[:200] if name else "Unknown"
+    if cleaned.upper() in _WIN_RESERVED or (cleaned.split(".")[0].upper() in _WIN_RESERVED):
+        cleaned = f"_{cleaned}"
+    return cleaned
 
 
 def _cleanup(tmp_dir: Path) -> None:

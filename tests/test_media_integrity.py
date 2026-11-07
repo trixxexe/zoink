@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from zoink.config import Config
+from zoink.converter import is_ffmpeg_available, get_ffmpeg_path
 from zoink.downloader import DownloadManager, DownloadJob, DownloadState
 from zoink.metadata import verify_audio_file, embed_metadata, read_metadata
 from zoink.provider import TrackResult
@@ -12,24 +13,30 @@ from zoink.provider import TrackResult
 
 @pytest.fixture(scope="module")
 def sample_mp3(tmp_path_factory):
+    if not is_ffmpeg_available():
+        pytest.skip("FFmpeg is not available")
     fn = tmp_path_factory.mktemp("audio") / "sine.mp3"
-    cmd = ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-b:a", "128k", str(fn)]
+    cmd = [get_ffmpeg_path() or "ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-b:a", "128k", str(fn)]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     return fn
 
 
 @pytest.fixture(scope="module")
 def sample_flac(tmp_path_factory):
+    if not is_ffmpeg_available():
+        pytest.skip("FFmpeg is not available")
     fn = tmp_path_factory.mktemp("audio") / "sine.flac"
-    cmd = ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", str(fn)]
+    cmd = [get_ffmpeg_path() or "ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", str(fn)]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     return fn
 
 
 @pytest.fixture(scope="module")
 def sample_opus(tmp_path_factory):
+    if not is_ffmpeg_available():
+        pytest.skip("FFmpeg is not available")
     fn = tmp_path_factory.mktemp("audio") / "sine.opus"
-    cmd = ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:a", "libopus", str(fn)]
+    cmd = [get_ffmpeg_path() or "ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:a", "libopus", str(fn)]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     return fn
 

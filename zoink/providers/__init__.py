@@ -25,6 +25,10 @@ _BASE_HEADERS = {
 
 
 def _node_path() -> str | None:
+    import shutil
+    found = shutil.which("node")
+    if found:
+        return found
     for candidate in (
         "/data/data/com.termux/files/usr/bin/node",
         "/usr/bin/node",
@@ -32,10 +36,6 @@ def _node_path() -> str | None:
     ):
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
-    for p in os.environ.get("PATH", "").split(os.pathsep):
-        probe = os.path.join(p, "node")
-        if os.path.isfile(probe) and os.access(probe, os.X_OK):
-            return probe
     return None
 
 
@@ -64,6 +64,13 @@ def _base_opts(**overrides) -> dict:
     }
     if _NODE:
         opts["jsruntime"] = _NODE
+    try:
+        from zoink.converter import get_ffmpeg_path
+        ff_path = get_ffmpeg_path()
+        if ff_path:
+            opts["ffmpeg_location"] = ff_path
+    except Exception:
+        pass
     opts.update(overrides)
     return opts
 

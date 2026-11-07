@@ -7,6 +7,7 @@ preserving full metadata, lyrics, and embedded album artwork.
 from __future__ import annotations
 
 import os
+import platform
 import shutil
 import subprocess
 import tempfile
@@ -34,10 +35,73 @@ BITRATE_MAP = {
     "128": {"mp3": "128k", "m4a": "128k", "opus": "128k", "ogg": "4"},
 }
 
+_CACHED_FFMPEG_PATH: Optional[str] = None
+
+
+def get_ffmpeg_path() -> Optional[str]:
+    """Find the path to the ffmpeg executable across all supported platforms."""
+    global _CACHED_FFMPEG_PATH
+    if _CACHED_FFMPEG_PATH and (Path(_CACHED_FFMPEG_PATH).is_file() or shutil.which(_CACHED_FFMPEG_PATH)):
+        return _CACHED_FFMPEG_PATH
+
+    # 1. Environment variables
+    for env_var in ("ZOINK_FFMPEG_PATH", "FFMPEG_PATH"):
+        val = os.environ.get(env_var, "").strip()
+        if val and (Path(val).is_file() or shutil.which(val)):
+            _CACHED_FFMPEG_PATH = val
+            return val
+
+    # 2. System PATH
+    found = shutil.which("ffmpeg") or shutil.which("ffmpeg.exe")
+    if found:
+        _CACHED_FFMPEG_PATH = found
+        return found
+
+    # 3. imageio_ffmpeg bundled binary
+    try:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and Path(exe).is_file():
+            _CACHED_FFMPEG_PATH = exe
+            return exe
+    except Exception:
+        pass
+
+    # 4. Standard platform paths
+    # Android Termux
+    for termux_path in (
+        "/data/data/com.termux/files/usr/bin/ffmpeg",
+        os.path.expanduser("~/../usr/bin/ffmpeg") if os.environ.get("PREFIX") else None,
+    ):
+        if termux_path and Path(termux_path).is_file():
+            _CACHED_FFMPEG_PATH = str(termux_path)
+            return _CACHED_FFMPEG_PATH
+
+    # Windows common locations
+    if platform.system() == "Windows":
+        win_candidates = [
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Links" / "ffmpeg.exe",
+            Path(os.environ.get("ProgramFiles", "")) / "ffmpeg" / "bin" / "ffmpeg.exe",
+            Path(os.environ.get("ProgramFiles(x86)", "")) / "ffmpeg" / "bin" / "ffmpeg.exe",
+            Path("C:/ffmpeg/bin/ffmpeg.exe"),
+        ]
+        for c in win_candidates:
+            if c.is_file():
+                _CACHED_FFMPEG_PATH = str(c)
+                return _CACHED_FFMPEG_PATH
+
+    # POSIX common locations
+    for posix_path in ("/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/homebrew/bin/ffmpeg"):
+        if Path(posix_path).is_file():
+            _CACHED_FFMPEG_PATH = posix_path
+            return posix_path
+
+    return None
+
 
 def is_ffmpeg_available() -> bool:
-    """Check if ffmpeg executable is available in PATH."""
-    return shutil.which("ffmpeg") is not None
+    """Check if ffmpeg executable is available on the system."""
+    return get_ffmpeg_path() is not None
 
 
 def run_ffmpeg_transcode(
@@ -51,11 +115,15 @@ def run_ffmpeg_transcode(
     if target_format not in SUPPORTED_FORMATS:
         return False
 
+    ffmpeg_bin = get_ffmpeg_path()
+    if not ffmpeg_bin:
+        return False
+
     q_key = str(quality).lower()
     rates = BITRATE_MAP.get(q_key, BITRATE_MAP["best"])
 
     cmd = [
-        "ffmpeg",
+        ffmpeg_bin,
         "-y",
         "-nostdin",
         "-i",

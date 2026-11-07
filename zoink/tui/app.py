@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import enum
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -141,6 +142,7 @@ class ZoinKTUI:
         on_refresh: Optional[Callable[[], None]] = None,
         on_theme_change: Optional[Callable[[str], None]] = None,
         on_request_exit: Optional[Callable[[], None]] = None,
+        initial_query: str = "",
     ):
         self.config = config or Config.get()
         self.provider = provider or YouTubeProvider()
@@ -240,6 +242,14 @@ class ZoinKTUI:
             self._reload_library_tracks()
         except Exception:
             pass
+
+        if initial_query:
+            self.input_text = initial_query.strip()
+            self.input_cursor = len(self.input_text)
+            try:
+                self.handle_submit()
+            except Exception:
+                pass
 
     def notify(self) -> None:
         """Request UI repaint. No-op if shutting down or exiting."""
@@ -1197,9 +1207,22 @@ class ZoinKTUI:
             self.notify()
             return
 
+        ffplay_cmd = "ffplay"
+        if not shutil.which("ffplay") and not shutil.which("ffplay.exe"):
+            try:
+                from zoink.converter import get_ffmpeg_path
+                ff = get_ffmpeg_path()
+                if ff:
+                    cand = Path(ff).parent / ("ffplay.exe" if platform.system() == "Windows" else "ffplay")
+                    if cand.is_file():
+                        ffplay_cmd = str(cand)
+            except Exception:
+                pass
+
         players = [
             ("mpv", ["mpv", "--no-video", "--really-quiet", filepath]),
-            ("ffplay", ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", filepath]),
+            ("ffplay", [ffplay_cmd, "-nodisp", "-autoexit", "-loglevel", "quiet", filepath]),
+            ("afplay", ["afplay", filepath]),
             ("termux-media-player", ["termux-media-player", "play", filepath]),
             ("paplay", ["paplay", filepath]),
             ("aplay", ["aplay", filepath]),
@@ -1207,8 +1230,9 @@ class ZoinKTUI:
         # Cache the player lookup result
         if not hasattr(self, '_cached_player_name') or self._cached_player_name is None:
             self._cached_player_name = None
-            for name, _cmd in players:
-                if shutil.which(name):
+            for name, cmd_args in players:
+                prog = cmd_args[0]
+                if shutil.which(name) or Path(prog).is_file():
                     self._cached_player_name = name
                     break
         matched_cmd = None
